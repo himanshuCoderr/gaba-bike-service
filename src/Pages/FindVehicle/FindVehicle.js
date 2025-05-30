@@ -7,8 +7,10 @@ import { collection, query, where, getDocs, updateDoc, doc } from 'firebase/fire
 import TwoWheelerIcon from '@mui/icons-material/TwoWheeler';
 import MopedIcon from '@mui/icons-material/Moped';
 import { TextField, Button, Radio, RadioGroup, FormControlLabel, FormControl, FormLabel } from '@mui/material';
+import { useAuth } from '../../Context/AuthContext'; // Add this import
 
 const SearchVehicle = () => {
+    const { isSuperAdmin } = useAuth(); // Add this line to get the auth context
     const [vehicleNumber, setVehicleNumber] = useState('');
     const [vehicleData, setVehicleData] = useState(null);
     const [newServiceData, setNewServiceData] = useState({
@@ -17,6 +19,7 @@ const SearchVehicle = () => {
         totalAmount: '',
         totalRecieve: '',
         serviceDate: new Date().toISOString().split('T')[0], // current date in YYYY-MM-DD format
+        serviceNote: '' // Add this new field
     });
     const [showModal, setShowModal] = useState(false); // Modal visibility state
     const [alertMessage, setAlertMessage] = useState(null); // For success/error messages
@@ -68,9 +71,10 @@ const SearchVehicle = () => {
             updatedServiceHistory.push({
                 serviceType: newServiceData.serviceType,
                 totalKM: newServiceData.totalKM,
-                serviceDate: newServiceData.serviceDate, // Use current date
+                serviceDate: newServiceData.serviceDate,
                 totalAmount: newServiceData.totalAmount,
-                totalRecieve: newServiceData.totalRecieve
+                totalRecieve: newServiceData.totalRecieve,
+                serviceNote: newServiceData.serviceNote
             });
 
             // Update the vehicle document with the new service history
@@ -78,7 +82,14 @@ const SearchVehicle = () => {
 
             setAlertMessage("Service added successfully!");
             setVehicleData({ ...vehicleData, serviceHistory: updatedServiceHistory }); // Update local state
-            setNewServiceData({ serviceType: '', totalKM: '', serviceDate: new Date().toISOString().split('T')[0] }); // Reset form
+            setNewServiceData({ 
+                serviceType: '', 
+                totalKM: '', 
+                serviceDate: new Date().toISOString().split('T')[0],
+                totalAmount: '',
+                totalRecieve: '',
+                serviceNote: ''
+            }); // Reset form
             setShowModal(false); // Close modal after submitting
         } catch (error) {
             console.error('Error adding service:', error);
@@ -176,8 +187,10 @@ const SearchVehicle = () => {
                                     <td style={{ border: "1px solid grey", borderCollapse: "collapse", textAlign: "center" }}>
                                         <input
                                             type="checkbox"
-                                            checked={Number(service.totalAmount) === Number(service.totalRecieve)} // Checkbox is checked if no pending amount
+                                            checked={Number(service.totalAmount) === Number(service.totalRecieve)}
+                                            disabled={!isSuperAdmin()} // Disable checkbox for subadmins
                                             onChange={async () => {
+                                                if (!isSuperAdmin()) return; // Prevent subadmins from updating
                                                 if (vehicleId && vehicleData.serviceHistory) {
                                                     try {
                                                         // Update the specific service in serviceHistory
@@ -216,19 +229,21 @@ const SearchVehicle = () => {
                         )}
                     </table>
 
-                    {/* Button to trigger Add Service Modal */}
-                    <Button
-                        onClick={() => setShowModal(true)}
-                        variant="contained"
-                        className="bg-green-500 text-white mt-5"
-                    >
-                        Add Next Service Info
-                    </Button>
+                    {/* Only show Add Service button for superadmin */}
+                    {isSuperAdmin() && (
+                        <Button
+                            onClick={() => setShowModal(true)}
+                            variant="contained"
+                            className="bg-green-500 text-white mt-5"
+                        >
+                            Add Next Service Info
+                        </Button>
+                    )}
                 </div>
             )}
 
-            {/* Modal for Adding a New Service */}
-            {showModal && (
+            {/* Modal for Adding a New Service - Only shown to superadmin */}
+            {showModal && isSuperAdmin() && (
                 <div className="fixed inset-0 bg-gray-500 bg-opacity-50 flex justify-center items-center">
                     <div className="bg-white p-8 rounded-md w-96">
                         <h3 className="text-xl mb-5">Add New Service</h3>
@@ -271,6 +286,17 @@ const SearchVehicle = () => {
                                 value={newServiceData.totalRecieve}
                                 onChange={(e) => setNewServiceData({ ...newServiceData, totalRecieve: e.target.value })}
                                 fullWidth
+                            />
+                            <TextField
+                                label="Service Description"
+                                variant="outlined"
+                                multiline
+                                rows={4}
+                                value={newServiceData.serviceNote}
+                                onChange={(e) => setNewServiceData({ ...newServiceData, serviceNote: e.target.value })}
+                                fullWidth
+                                placeholder="Enter service details, parts replaced, or any other notes..."
+                                sx={{ marginTop: '16px' }}
                             />
                         </div>
 
