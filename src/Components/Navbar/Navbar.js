@@ -1,96 +1,223 @@
 import React, { useState } from 'react';
-import Button from '@mui/material/Button';
-import { Link, useNavigate } from 'react-router-dom';
-import { getAuth, signOut } from 'firebase/auth';
-import { useAuth } from '../../Context/AuthContext';
+import { useNavigate } from 'react-router-dom';
+import {
+    AppBar,
+    Box,
+    Toolbar,
+    IconButton,
+    Typography,
+    Menu,
+    Container,
+    Avatar,
+    Button,
+    Tooltip,
+    MenuItem,
+    Badge
+} from '@mui/material';
+import MenuIcon from '@mui/icons-material/Menu';
+import NotificationsIcon from '@mui/icons-material/Notifications';
+import PhoneCallback from '@mui/icons-material/PhoneCallback';
+import DashboardIcon from '@mui/icons-material/Dashboard';
+import PersonAddIcon from '@mui/icons-material/PersonAdd';
+import PeopleIcon from '@mui/icons-material/People';
+import BuildIcon from '@mui/icons-material/Build';
+import BarChartIcon from '@mui/icons-material/BarChart';
 
 const Navbar = () => {
-    const { user } = useAuth();
     const navigate = useNavigate();
-    const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-    const auth = getAuth();
+    const [anchorElNav, setAnchorElNav] = useState(null);
+    const [anchorElUser, setAnchorElUser] = useState(null);
 
-    const handleLogout = async () => {
-        try {
-            await signOut(auth);
-            console.log('User signed out');
-        } catch (error) {
-            console.error('Logout error:', error);
-        }
-    }
+    const handleOpenNavMenu = (event) => {
+        setAnchorElNav(event.currentTarget);
+    };
+    const handleOpenUserMenu = (event) => {
+        setAnchorElUser(event.currentTarget);
+    };
 
-    const handleLoginRedirect = () => {
-        navigate('/signIn'); // Redirect to the Sign In route
-    }
+    const handleCloseNavMenu = () => {
+        setAnchorElNav(null);
+    };
 
-    const toggleMobileMenu = () => {
-        setIsMobileMenuOpen(!isMobileMenuOpen);
-    }
+    const handleCloseUserMenu = () => {
+        setAnchorElUser(null);
+    };
+
+    const handleLogout = () => {
+        // TODO: Implement logout functionality
+        navigate('/signIn');
+    };
+
+    const pages = [
+        { name: 'Dashboard', path: '/', icon: <DashboardIcon /> },
+        { name: 'Add Customer', path: '/add-customer', icon: <PersonAddIcon /> },
+        { name: 'View Customers', path: '/view-all-customer', icon: <PeopleIcon /> },
+        { name: 'Add Service', path: '/add-service', icon: <BuildIcon /> },
+        { name: 'Follow-up Dashboard', path: '/follow-up', icon: <PhoneCallback />, badge: 5 },
+        { name: 'Reports', path: '/reports', icon: <BarChartIcon /> }
+    ];
+
+    const settings = [
+        { name: 'Profile', action: () => navigate('/profile') },
+        { name: 'Account Settings', action: () => navigate('/settings') },
+        { name: 'Dashboard', action: () => navigate('/') },
+        { name: 'Logout', action: handleLogout }
+    ];
 
     return (
-        <nav className="bg-red-100 p-5">
-            <div className="container mx-auto flex justify-between items-center">
-                <Link to="/" className="text-xl text-black">
-                    Gaba Bike Service Admin
-                </Link>
-                <div className="hidden md:flex space-x-4">
-                    <Link to="/addNewCustomer">
-                        <Button variant="contained">Add New Customer</Button>
-                    </Link>
-                    <Link to="/">
-                        <Button variant="contained">Check Customer</Button>
-                    </Link>
-                    <Link to="/viewAllCustomer">
-                        <Button variant="contained">View All Customer</Button>
-                    </Link>
-                    {user ? (
-                        <Button variant="contained" onClick={handleLogout}>
-                            Logout
-                        </Button>
-                    ) : (
-                        <Button variant="contained" onClick={handleLoginRedirect}>
-                            ADMIN Login
-                        </Button>
-                    )}
-                </div>
-                <div className="md:hidden">
-                    <button onClick={toggleMobileMenu} className="text-black focus:outline-none">
-                        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 12h16m-7 6h7"></path>
-                        </svg>
-                    </button>
-                </div>
-            </div>
-            {isMobileMenuOpen && (
-                <div className="md:hidden mt-4 space-y-2">
-                    <Link to="/addNewCustomer">
-                        <Button variant="contained" fullWidth>
-                            Add New Customer
-                        </Button>
-                    </Link>
-                    <Link to="/">
-                        <Button variant="contained" fullWidth>
-                            Check Customer
-                        </Button>
-                    </Link>
-                    <Link to="/viewAllCustomer">
-                        <Button variant="contained" fullWidth>
-                            View All Customer
-                        </Button>
-                    </Link>
-                    {user ? (
-                        <Button variant="contained" fullWidth onClick={handleLogout}>
-                            Logout
-                        </Button>
-                    ) : (
-                        <Button variant="contained" fullWidth onClick={handleLoginRedirect}>
-                            ADMIN Login
-                        </Button>
-                    )}
-                </div>
-            )}
-        </nav>
-    )
-}
+        <AppBar position="static">
+            <Container maxWidth="xl">
+                <Toolbar disableGutters>
+                    <BuildIcon sx={{ display: { xs: 'none', md: 'flex' }, mr: 1 }} />
+                    <Typography
+                        variant="h6"
+                        noWrap
+                        component="div"
+                        onClick={() => navigate('/')}
+                        sx={{
+                            mr: 2,
+                            display: { xs: 'none', md: 'flex' },
+                            fontFamily: 'monospace',
+                            fontWeight: 700,
+                            letterSpacing: '.3rem',
+                            color: 'inherit',
+                            textDecoration: 'none',
+                            cursor: 'pointer'
+                        }}
+                    >
+                        GABA BIKE SERVICE
+                    </Typography>
 
-export default Navbar
+                    <Box sx={{ flexGrow: 1, display: { xs: 'flex', md: 'none' } }}>
+                        <IconButton
+                            size="large"
+                            aria-label="account of current user"
+                            aria-controls="menu-appbar"
+                            aria-haspopup="true"
+                            onClick={handleOpenNavMenu}
+                            color="inherit"
+                        >
+                            <MenuIcon />
+                        </IconButton>
+                        <Menu
+                            id="menu-appbar"
+                            anchorEl={anchorElNav}
+                            anchorOrigin={{
+                                vertical: 'bottom',
+                                horizontal: 'left',
+                            }}
+                            keepMounted
+                            transformOrigin={{
+                                vertical: 'top',
+                                horizontal: 'left',
+                            }}
+                            open={Boolean(anchorElNav)}
+                            onClose={handleCloseNavMenu}
+                            sx={{
+                                display: { xs: 'block', md: 'none' },
+                            }}
+                        >
+                            {pages.map((page) => (
+                                <MenuItem key={page.name} onClick={() => {
+                                    handleCloseNavMenu();
+                                    navigate(page.path);
+                                }}>
+                                    {page.icon}
+                                    <Typography sx={{ ml: 1 }}>{page.name}</Typography>
+                                    {page.badge && (
+                                        <Badge badgeContent={page.badge} color="error" sx={{ ml: 1 }} />
+                                    )}
+                                </MenuItem>
+                            ))}
+                        </Menu>
+                    </Box>
+
+                    <BuildIcon sx={{ display: { xs: 'flex', md: 'none' }, mr: 1 }} />
+                    <Typography
+                        variant="h5"
+                        noWrap
+                        component="div"
+                        onClick={() => navigate('/')}
+                        sx={{
+                            mr: 2,
+                            display: { xs: 'flex', md: 'none' },
+                            flexGrow: 1,
+                            fontFamily: 'monospace',
+                            fontWeight: 700,
+                            letterSpacing: '.3rem',
+                            color: 'inherit',
+                            textDecoration: 'none',
+                            cursor: 'pointer'
+                        }}
+                    >
+                        GABA
+                    </Typography>
+                    <Box sx={{ flexGrow: 1, display: { xs: 'none', md: 'flex' } }}>
+                        {pages.map((page) => (
+                            <Button
+                                key={page.name}
+                                onClick={() => {
+                                    handleCloseNavMenu();
+                                    navigate(page.path);
+                                }}
+                                sx={{ my: 2, color: 'white', display: 'flex', alignItems: 'center' }}
+                            >
+                                {page.icon}
+                                <Typography sx={{ ml: 1 }}>{page.name}</Typography>
+                                {page.badge && (
+                                    <Badge badgeContent={page.badge} color="error" sx={{ ml: 1 }} />
+                                )}
+                            </Button>
+                        ))}
+                    </Box>
+
+                    <Box sx={{ flexGrow: 0, display: 'flex', alignItems: 'center' }}>
+                        <Tooltip title="Notifications">
+                            <IconButton sx={{ mr: 2 }} color="inherit">
+                                <Badge badgeContent={4} color="error">
+                                    <NotificationsIcon />
+                                </Badge>
+                            </IconButton>
+                        </Tooltip>
+                        
+                        <Tooltip title="Open settings">
+                            <IconButton onClick={handleOpenUserMenu} sx={{ p: 0 }}>
+                                <Avatar alt="User" src="/static/images/avatar/2.jpg" />
+                            </IconButton>
+                        </Tooltip>
+                        <Menu
+                            sx={{ mt: '45px' }}
+                            id="menu-appbar"
+                            anchorEl={anchorElUser}
+                            anchorOrigin={{
+                                vertical: 'top',
+                                horizontal: 'right',
+                            }}
+                            keepMounted
+                            transformOrigin={{
+                                vertical: 'top',
+                                horizontal: 'right',
+                            }}
+                            open={Boolean(anchorElUser)}
+                            onClose={handleCloseUserMenu}
+                        >
+                            {settings.map((setting) => (
+                                <MenuItem 
+                                    key={setting.name} 
+                                    onClick={() => {
+                                        setting.action();
+                                        handleCloseUserMenu();
+                                    }}
+                                >
+                                    <Typography textAlign="center">{setting.name}</Typography>
+                                </MenuItem>
+                            ))}
+                        </Menu>
+                    </Box>
+                </Toolbar>
+            </Container>
+        </AppBar>
+    );
+};
+
+export default Navbar;

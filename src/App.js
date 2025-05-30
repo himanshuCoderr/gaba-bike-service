@@ -1,17 +1,18 @@
-import logo from './logo.svg';
+import React from 'react';
 import './App.css';
 import SearchVehicle from './Pages/FindVehicle/FindVehicle';
 import AddNewCustomer from './Pages/AddNewCustomer/AddNewCustomer';
 import {
   Routes,
   Route,
-  BrowserRouter
+  BrowserRouter as Router,
+  Navigate
 } from "react-router-dom";
 import AdminLogin from './Pages/SignIn/SignIn';
 import { SuperAdminRoute, AdminRoute } from './ProtectedRoute/RoleBasedRoute';
 import { AuthProvider } from './Context/AuthContext';
 import ViewAllCustomer from './Pages/ViewAllCustomer/ViewAllCustomer';
-import React from 'react';
+import FollowUpDashboard from './Pages/FollowUpDashboard/FollowUpDashboard';
 
 // Error Boundary Component
 class ErrorBoundary extends React.Component {
@@ -53,9 +54,13 @@ function App() {
   return (
     <div className="App">
       <ErrorBoundary>
-        <BrowserRouter>
+        <Router>
           <AuthProvider>
             <Routes>
+              {/* Public Routes */}
+              <Route path="/signIn" element={<AdminLogin />} />
+
+              {/* Protected Routes */}
               <Route
                 path="/"
                 element={
@@ -65,7 +70,7 @@ function App() {
                 }
               />
               <Route
-                path="/addNewCustomer"
+                path="/add-customer"
                 element={
                   <SuperAdminRoute>
                     <AddNewCustomer />
@@ -73,20 +78,59 @@ function App() {
                 }
               />
               <Route
-                path="/signIn"
-                element={<AdminLogin />}
-              />
-              <Route
-                path="/viewAllCustomer"
+                path="/view-all-customer"
                 element={
                   <AdminRoute>
                     <ViewAllCustomer />
                   </AdminRoute>
                 }
               />
+              <Route
+                path="/follow-up"
+                element={
+                  <AdminRoute>
+                    <FollowUpDashboard />
+                  </AdminRoute>
+                }
+              />
+              <Route
+                path="/add-service"
+                element={
+                  <AdminRoute>
+                    <AddNewCustomer />  {/* TODO: Create AddService component */}
+                  </AdminRoute>
+                }
+              />
+              <Route
+                path="/reports"
+                element={
+                  <AdminRoute>
+                    <div>Reports Page Coming Soon</div>  {/* TODO: Create Reports component */}
+                  </AdminRoute>
+                }
+              />
+              <Route
+                path="/profile"
+                element={
+                  <AdminRoute>
+                    <div>Profile Page Coming Soon</div>  {/* TODO: Create Profile component */}
+                  </AdminRoute>
+                }
+              />
+              <Route
+                path="/settings"
+                element={
+                  <AdminRoute>
+                    <div>Settings Page Coming Soon</div>  {/* TODO: Create Settings component */}
+                  </AdminRoute>
+                }
+              />
+
+              {/* Catch all route - redirect to home */}
+              <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
           </AuthProvider>
-        </BrowserRouter>
+        </Router>
       </ErrorBoundary>
     </div>
   );

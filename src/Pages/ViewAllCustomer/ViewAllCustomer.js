@@ -36,7 +36,8 @@ import {
     Divider,
     ToggleButton,
     ToggleButtonGroup,
-    Stack
+    Stack,
+    ListItemIcon
 } from '@mui/material';
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp';
@@ -51,6 +52,11 @@ import NotificationsIcon from '@mui/icons-material/Notifications';
 import MoreVertIcon from '@mui/icons-material/MoreVert';
 import CalendarTodayIcon from '@mui/icons-material/CalendarToday';
 import MonetizationOnIcon from '@mui/icons-material/MonetizationOn';
+import PhoneCallback from '@mui/icons-material/PhoneCallback';
+import GetApp from '@mui/icons-material/GetApp';
+import Print from '@mui/icons-material/Print';
+import History from '@mui/icons-material/History';
+import { createFollowUpFromService } from '../../firebase/followUpOperations';
 
 // Add this utility function at the top of the file
 const calculateServiceDue = (vehicle) => {
@@ -170,6 +176,157 @@ const calculateEarnings = (vehicles, timeRange) => {
             serviceCount: acc.serviceCount + serviceCount
         };
     }, { received: 0, pending: 0, total: 0, serviceCount: 0 });
+};
+
+// Add new follow-up status types at the top
+const FOLLOW_UP_STATUS = {
+    PENDING: 'pending',
+    CALLED: 'called',
+    SCHEDULED: 'scheduled',
+    NOT_INTERESTED: 'not_interested',
+    NO_RESPONSE: 'no_response',
+    CALLBACK_REQUESTED: 'callback_requested'
+};
+
+// Add the FollowUpDialog component
+const FollowUpDialog = ({ open, onClose, vehicle, onSave }) => {
+    const [followUpData, setFollowUpData] = useState({
+        status: FOLLOW_UP_STATUS.CALLED,
+        customerResponse: '',
+        notes: '',
+        nextFollowUpDate: null,
+        scheduleDate: null
+    });
+
+    const handleSave = async () => {
+        try {
+            const timestamp = new Date();
+            const callRecord = {
+                status: followUpData.status,
+                customerResponse: followUpData.customerResponse,
+                notes: followUpData.notes,
+                timestamp: timestamp,
+                nextFollowUpDate: followUpData.status === 'scheduled' 
+                    ? followUpData.scheduleDate 
+                    : followUpData.nextFollowUpDate
+            };
+
+            const followUpRecord = {
+                customerId: vehicle.id,
+                customerName: vehicle.name,
+                phone: vehicle.mobileNo,
+                vehicleId: vehicle.id,
+                vehicleNumber: vehicle.vehicleNumber,
+                vehicleType: vehicle.vehicleType,
+                lastServiceDate: vehicle.serviceHistory?.[vehicle.serviceHistory.length - 1]?.serviceDate || null,
+                status: followUpData.status,
+                customerResponse: followUpData.customerResponse,
+                notes: followUpData.notes,
+                nextFollowUpDate: callRecord.nextFollowUpDate,
+                callHistory: [callRecord],
+                createdAt: timestamp,
+                updatedAt: timestamp,
+                lastCallTimestamp: timestamp,
+                serviceDueData: calculateServiceDue(vehicle)
+            };
+
+            await createFollowUpFromService(followUpRecord, followUpData.status);
+            onClose();
+            // Optional: Show success message or refresh data
+        } catch (error) {
+            console.error('Error saving follow-up:', error);
+            // Optional: Show error message
+        }
+    };
+
+    return (
+        <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
+            <DialogTitle>
+                Customer Follow-up: {vehicle?.name}
+                <Typography variant="subtitle2" color="textSecondary">
+                    Vehicle: {vehicle?.vehicleNumber}
+                </Typography>
+            </DialogTitle>
+            <DialogContent>
+                <Stack spacing={2} sx={{ mt: 2 }}>
+                    <FormControl fullWidth>
+                        <InputLabel>Follow-up Status</InputLabel>
+                        <Select
+                            value={followUpData.status}
+                            onChange={(e) => setFollowUpData({ ...followUpData, status: e.target.value })}
+                            label="Follow-up Status"
+                        >
+                            <MenuItem value={FOLLOW_UP_STATUS.CALLED}>Called</MenuItem>
+                            <MenuItem value={FOLLOW_UP_STATUS.SCHEDULED}>Service Scheduled</MenuItem>
+                            <MenuItem value={FOLLOW_UP_STATUS.NOT_INTERESTED}>Not Interested</MenuItem>
+                            <MenuItem value={FOLLOW_UP_STATUS.NO_RESPONSE}>No Response</MenuItem>
+                            <MenuItem value={FOLLOW_UP_STATUS.CALLBACK_REQUESTED}>Callback Requested</MenuItem>
+                        </Select>
+                    </FormControl>
+
+                    <TextField
+                        fullWidth
+                        multiline
+                        rows={2}
+                        label="Customer Response"
+                        value={followUpData.customerResponse}
+                        onChange={(e) => setFollowUpData({ 
+                            ...followUpData, 
+                            customerResponse: e.target.value 
+                        })}
+                        placeholder="Enter customer's response..."
+                    />
+
+                    <TextField
+                        fullWidth
+                        multiline
+                        rows={3}
+                        label="Call Notes"
+                        value={followUpData.notes}
+                        onChange={(e) => setFollowUpData({ 
+                            ...followUpData, 
+                            notes: e.target.value 
+                        })}
+                        placeholder="Add detailed notes about the call..."
+                    />
+
+                    {followUpData.status === FOLLOW_UP_STATUS.CALLBACK_REQUESTED && (
+                        <TextField
+                            fullWidth
+                            type="datetime-local"
+                            label="Next Follow-up Date"
+                            value={followUpData.nextFollowUpDate || ''}
+                            onChange={(e) => setFollowUpData({
+                                ...followUpData,
+                                nextFollowUpDate: e.target.value
+                            })}
+                            InputLabelProps={{ shrink: true }}
+                        />
+                    )}
+
+                    {followUpData.status === FOLLOW_UP_STATUS.SCHEDULED && (
+                        <TextField
+                            fullWidth
+                            type="date"
+                            label="Service Schedule Date"
+                            value={followUpData.scheduleDate || ''}
+                            onChange={(e) => setFollowUpData({
+                                ...followUpData,
+                                scheduleDate: e.target.value
+                            })}
+                            InputLabelProps={{ shrink: true }}
+                        />
+                    )}
+                </Stack>
+            </DialogContent>
+            <DialogActions>
+                <Button onClick={onClose}>Cancel</Button>
+                <Button onClick={handleSave} variant="contained" color="primary">
+                    Save Follow-up
+                </Button>
+            </DialogActions>
+        </Dialog>
+    );
 };
 
 // Statistics Component
@@ -420,6 +577,29 @@ const Row = ({ vehicle, onServiceReminder }) => {
         }
     });
 
+    const [followUpDialogOpen, setFollowUpDialogOpen] = useState(false);
+
+    const handleFollowUpSave = async (followUpData) => {
+        try {
+            const serviceData = {
+                customerId: vehicle.id,
+                customerName: vehicle.name,
+                mobileNo: vehicle.mobileNo,
+                vehicleId: vehicle.id,
+                vehicleNumber: vehicle.vehicleNumber,
+                vehicleType: vehicle.vehicleType,
+                serviceDate: new Date().toISOString(),
+                serviceDueData: serviceDueStatus
+            };
+
+            await createFollowUpFromService(serviceData, followUpData.status);
+            // Show success message or update UI
+        } catch (error) {
+            console.error('Error saving follow-up:', error);
+            // Show error message
+        }
+    };
+
     return (
         <>
             <TableRow sx={{ '& > *': { borderBottom: 'unset' } }}>
@@ -483,18 +663,33 @@ const Row = ({ vehicle, onServiceReminder }) => {
                         open={Boolean(menuAnchor)}
                         onClose={() => setMenuAnchor(null)}
                     >
+                        <MenuItem onClick={() => {
+                            setFollowUpDialogOpen(true);
+                            setMenuAnchor(null);
+                        }}>
+                            <ListItemIcon>
+                                <PhoneCallback fontSize="small" />
+                            </ListItemIcon>
+                            Record Follow-up Call
+                        </MenuItem>
                         <MenuItem onClick={() => {/* TODO: Export service history */}}>
+                            <ListItemIcon>
+                                <GetApp fontSize="small" />
+                            </ListItemIcon>
                             Export Service History
                         </MenuItem>
                         <MenuItem onClick={() => {/* TODO: Print invoice */}}>
+                            <ListItemIcon>
+                                <Print fontSize="small" />
+                            </ListItemIcon>
                             Print Latest Invoice
                         </MenuItem>
-                        <MenuItem onClick={() => {/* TODO: Schedule service */}}>
-                            Schedule Next Service
-                        </MenuItem>
                         <Divider />
-                        <MenuItem onClick={() => {/* TODO: Edit customer */}}>
-                            Edit Customer Details
+                        <MenuItem onClick={() => {/* TODO: View follow-up history */}}>
+                            <ListItemIcon>
+                                <History fontSize="small" />
+                            </ListItemIcon>
+                            View Follow-up History
                         </MenuItem>
                     </Menu>
                 </TableCell>
@@ -600,14 +795,20 @@ const Row = ({ vehicle, onServiceReminder }) => {
                     </Collapse>
                 </TableCell>
             </TableRow>
+            <FollowUpDialog
+                open={followUpDialogOpen}
+                onClose={() => setFollowUpDialogOpen(false)}
+                vehicle={vehicle}
+                onSave={handleFollowUpSave}
+            />
         </>
     );
 };
 
 const ViewAllCustomer = () => {
     const [vehicles, setVehicles] = useState([]);
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
     const [searchTerm, setSearchTerm] = useState('');
     const [filteredVehicles, setFilteredVehicles] = useState([]);
     const [filterAnchor, setFilterAnchor] = useState(null);
@@ -615,6 +816,7 @@ const ViewAllCustomer = () => {
         vehicleType: 'all',
         serviceStatus: 'all',
         paymentStatus: 'all',
+        followUpStatus: 'all',
         dateRange: 'all'
     });
     const [sortConfig, setSortConfig] = useState({
@@ -626,27 +828,27 @@ const ViewAllCustomer = () => {
         vehicle: null
     });
 
-    useEffect(() => {
+  useEffect(() => {
         const fetchVehicles = async () => {
             try {
                 const vehiclesCollection = firestoreCollection(firestore, 'vehicles');
                 const vehiclesSnapshot = await getDocs(vehiclesCollection);
                 const vehiclesList = vehiclesSnapshot.docs.map(doc => ({
-                    id: doc.id,
-                    ...doc.data()
-                }));
+          id: doc.id,
+          ...doc.data()
+        }));
                 setVehicles(vehiclesList);
                 setFilteredVehicles(vehiclesList);
-            } catch (err) {
+      } catch (err) {
                 console.error('Error fetching vehicles:', err);
                 setError('Failed to load vehicle data');
-            } finally {
-                setLoading(false);
-            }
-        };
+      } finally {
+        setLoading(false);
+      }
+    };
 
         fetchVehicles();
-    }, []);
+  }, []);
 
     useEffect(() => {
         let filtered = [...vehicles];
@@ -735,26 +937,26 @@ const ViewAllCustomer = () => {
         });
     };
 
-    if (loading) {
-        return (
-            <div className="flex justify-center items-center min-h-screen">
-                <CircularProgress />
-            </div>
-        );
-    }
-
-    if (error) {
-        return (
-            <div className="flex justify-center items-center min-h-screen">
-                <Typography color="error">{error}</Typography>
-            </div>
-        );
-    }
-
+  if (loading) {
     return (
+      <div className="flex justify-center items-center min-h-screen">
+                <CircularProgress />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex justify-center items-center min-h-screen">
+                <Typography color="error">{error}</Typography>
+      </div>
+    );
+  }
+
+  return (
         <div>
             <Navbar />
-            <div className="container mx-auto px-4 py-8">
+    <div className="container mx-auto px-4 py-8">
                 {/* Statistics Dashboard */}
                 <Statistics vehicles={vehicles} />
 
@@ -823,6 +1025,20 @@ const ViewAllCustomer = () => {
                                 <MenuItem value="all">All Payments</MenuItem>
                                 <MenuItem value="pending">Pending Payments</MenuItem>
                                 <MenuItem value="completed">Completed Payments</MenuItem>
+                            </Select>
+                        </FormControl>
+
+                        <FormControl fullWidth sx={{ mb: 2 }}>
+                            <InputLabel>Follow-up Status</InputLabel>
+                            <Select
+                                value={filters.followUpStatus}
+                                onChange={(e) => setFilters({ ...filters, followUpStatus: e.target.value })}
+                            >
+                                <MenuItem value="all">All Status</MenuItem>
+                                <MenuItem value="pending">Pending Follow-up</MenuItem>
+                                <MenuItem value="called">Called</MenuItem>
+                                <MenuItem value="scheduled">Service Scheduled</MenuItem>
+                                <MenuItem value="callback">Callback Required</MenuItem>
                             </Select>
                         </FormControl>
                     </Box>
@@ -909,9 +1125,9 @@ const ViewAllCustomer = () => {
                         </Button>
                     </DialogActions>
                 </Dialog>
-            </div>
-        </div>
-    );
+      </div>
+    </div>
+  );
 };
 
 export default ViewAllCustomer; 
