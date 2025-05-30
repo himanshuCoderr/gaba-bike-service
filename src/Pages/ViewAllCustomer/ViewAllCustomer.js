@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { firestore, collection } from '../../firebase';
-import { getDocs, query, collection as firestoreCollection, where, doc, updateDoc } from 'firebase/firestore';
+import { getDocs, query, collection as firestoreCollection, where, doc, updateDoc, deleteDoc } from 'firebase/firestore';
 import Navbar from '../../Components/Navbar/Navbar';
 import { 
     Table, 
@@ -38,7 +38,11 @@ import {
     ToggleButtonGroup,
     Stack,
     ListItemIcon,
-    Alert
+    Alert,
+    FormLabel,
+    RadioGroup,
+    FormControlLabel,
+    Radio
 } from '@mui/material';
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp';
@@ -59,6 +63,7 @@ import Print from '@mui/icons-material/Print';
 import History from '@mui/icons-material/History';
 import Timeline from '@mui/icons-material/Timeline';
 import EditIcon from '@mui/icons-material/Edit';
+import DeleteIcon from '@mui/icons-material/Delete';
 import { createFollowUpFromService } from '../../firebase/followUpOperations';
 
 // Add this utility function at the top of the file
@@ -415,6 +420,162 @@ const EditCustomerDialog = ({ open, onClose, vehicle, onSave }) => {
     );
 };
 
+// Add EditServiceDialog component before the Row component
+const EditServiceDialog = ({ open, onClose, service, onSave }) => {
+    const [serviceData, setServiceData] = useState({
+        serviceType: service?.serviceType || '',
+        totalKM: service?.totalKM || '',
+        serviceDate: service?.serviceDate || new Date().toISOString().split('T')[0],
+        totalAmount: service?.totalAmount || '',
+        totalRecieve: service?.totalRecieve || '',
+        serviceNote: service?.serviceNote || ''
+    });
+
+    const handleSave = () => {
+        onSave(serviceData);
+        onClose();
+    };
+
+    return (
+        <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
+            <DialogTitle>Edit Service Details</DialogTitle>
+            <DialogContent>
+                <Stack spacing={2} sx={{ mt: 2 }}>
+                    <FormControl component="fieldset">
+                        <FormLabel component="legend">Service Type</FormLabel>
+                        <RadioGroup
+                            name="serviceType"
+                            value={serviceData.serviceType}
+                            onChange={(e) => setServiceData({ ...serviceData, serviceType: e.target.value })}
+                        >
+                            <FormControlLabel value="Paid Regular Service" control={<Radio />} label="Paid Regular Service" />
+                            <FormControlLabel value="General Repair" control={<Radio />} label="General Repair" />
+                        </RadioGroup>
+                    </FormControl>
+
+                    <TextField
+                        fullWidth
+                        label="Total KM"
+                        type="number"
+                        value={serviceData.totalKM}
+                        onChange={(e) => setServiceData({ ...serviceData, totalKM: e.target.value })}
+                    />
+
+                    <TextField
+                        fullWidth
+                        label="Service Date"
+                        type="date"
+                        value={serviceData.serviceDate}
+                        onChange={(e) => setServiceData({ ...serviceData, serviceDate: e.target.value })}
+                        InputLabelProps={{ shrink: true }}
+                    />
+
+                    <TextField
+                        fullWidth
+                        label="Total Amount"
+                        type="number"
+                        value={serviceData.totalAmount}
+                        onChange={(e) => setServiceData({ ...serviceData, totalAmount: e.target.value })}
+                    />
+
+                    <TextField
+                        fullWidth
+                        label="Amount Received"
+                        type="number"
+                        value={serviceData.totalRecieve}
+                        onChange={(e) => setServiceData({ ...serviceData, totalRecieve: e.target.value })}
+                    />
+
+                    <TextField
+                        fullWidth
+                        label="Service Notes"
+                        multiline
+                        rows={4}
+                        value={serviceData.serviceNote}
+                        onChange={(e) => setServiceData({ ...serviceData, serviceNote: e.target.value })}
+                    />
+                </Stack>
+            </DialogContent>
+            <DialogActions>
+                <Button onClick={onClose}>Cancel</Button>
+                <Button onClick={handleSave} variant="contained" color="primary">
+                    Save Changes
+                </Button>
+            </DialogActions>
+        </Dialog>
+    );
+};
+
+// Add DeleteConfirmationDialog component before EditServiceDialog
+const DeleteConfirmationDialog = ({ open, onClose, onConfirm, serviceDate }) => {
+    return (
+        <Dialog open={open} onClose={onClose}>
+            <DialogTitle>Confirm Delete</DialogTitle>
+            <DialogContent>
+                <Typography>
+                    Are you sure you want to delete the service record from {new Date(serviceDate).toLocaleDateString()}?
+                    This action cannot be undone.
+                </Typography>
+            </DialogContent>
+            <DialogActions>
+                <Button onClick={onClose}>Cancel</Button>
+                <Button onClick={onConfirm} color="error" variant="contained">
+                    Delete
+                </Button>
+            </DialogActions>
+        </Dialog>
+    );
+};
+
+// Add DeleteCustomerDialog component before the Row component
+const DeleteCustomerDialog = ({ open, onClose, onConfirm, customerName, vehicleNumber }) => {
+    const [confirmText, setConfirmText] = useState('');
+    const expectedText = 'DELETE';
+
+    return (
+        <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
+            <DialogTitle>Delete Customer Record</DialogTitle>
+            <DialogContent>
+                <Stack spacing={2}>
+                    <Alert severity="warning">
+                        This action will permanently delete:
+                        <ul>
+                            <li>Customer details</li>
+                            <li>All service history records</li>
+                            <li>Associated follow-ups</li>
+                        </ul>
+                        This action cannot be undone.
+                    </Alert>
+                    <Typography>
+                        Customer: <strong>{customerName}</strong><br />
+                        Vehicle Number: <strong>{vehicleNumber}</strong>
+                    </Typography>
+                    <Typography variant="body2" color="error">
+                        To confirm deletion, type "DELETE" in the field below:
+                    </Typography>
+                    <TextField
+                        fullWidth
+                        value={confirmText}
+                        onChange={(e) => setConfirmText(e.target.value)}
+                        placeholder="Type DELETE to confirm"
+                    />
+                </Stack>
+            </DialogContent>
+            <DialogActions>
+                <Button onClick={onClose}>Cancel</Button>
+                <Button 
+                    onClick={onConfirm}
+                    color="error" 
+                    variant="contained"
+                    disabled={confirmText !== expectedText}
+                >
+                    Delete Customer Record
+                </Button>
+            </DialogActions>
+        </Dialog>
+    );
+};
+
 // Statistics Component
 const Statistics = ({ vehicles }) => {
     const [earningsTimeRange, setEarningsTimeRange] = useState('month');
@@ -559,8 +720,156 @@ const Statistics = ({ vehicles }) => {
     );
 };
 
+// Add FilterStatistics component before the ViewAllCustomer component
+const FilterStatistics = ({ vehicles, currentFilters }) => {
+    const stats = useMemo(() => {
+        let filteredVehicles = [...vehicles];
+        
+        // Apply current filters
+        if (currentFilters.vehicleType !== 'all') {
+            filteredVehicles = filteredVehicles.filter(v => v.vehicleType === currentFilters.vehicleType);
+        }
+
+        if (currentFilters.serviceType !== 'all') {
+            filteredVehicles = filteredVehicles.filter(v => {
+                const lastService = v.serviceHistory?.[v.serviceHistory.length - 1];
+                return lastService?.serviceType === currentFilters.serviceType;
+            });
+        }
+
+        if (currentFilters.serviceStatus !== 'all') {
+            filteredVehicles = filteredVehicles.filter(v => {
+                const serviceStatus = calculateServiceDue(v);
+                if (currentFilters.serviceStatus === 'due') {
+                    return serviceStatus.isDue;
+                } else if (currentFilters.serviceStatus === 'upcoming') {
+                    return !serviceStatus.isDue && serviceStatus.nextDue && 
+                        (new Date(serviceStatus.nextDue) - new Date()) / (1000 * 60 * 60 * 24) <= 15;
+                }
+                return true;
+            });
+        }
+
+        if (currentFilters.paymentStatus !== 'all') {
+            filteredVehicles = filteredVehicles.filter(v => {
+                const totalPending = v.serviceHistory?.reduce((acc, service) => 
+                    acc + (Number(service.totalAmount) - Number(service.totalRecieve)), 0) || 0;
+                return currentFilters.paymentStatus === 'pending' ? totalPending > 0 : totalPending === 0;
+            });
+        }
+
+        // Calculate statistics
+        const totalEarnings = filteredVehicles.reduce((acc, v) => {
+            return acc + (v.serviceHistory?.reduce((sum, service) => 
+                sum + Number(service.totalRecieve || 0), 0) || 0);
+        }, 0);
+
+        const totalPending = filteredVehicles.reduce((acc, v) => {
+            return acc + (v.serviceHistory?.reduce((sum, service) => 
+                sum + (Number(service.totalAmount || 0) - Number(service.totalRecieve || 0)), 0) || 0);
+        }, 0);
+
+        const totalServices = filteredVehicles.reduce((acc, v) => 
+            acc + (v.serviceHistory?.length || 0), 0);
+
+        const servicesDue = filteredVehicles.filter(v => 
+            calculateServiceDue(v).isDue).length;
+
+        return {
+            customerCount: filteredVehicles.length,
+            totalEarnings,
+            totalPending,
+            totalServices,
+            servicesDue,
+            averageServiceValue: totalServices ? (totalEarnings / totalServices).toFixed(2) : 0
+        };
+    }, [vehicles, currentFilters]);
+
+    return (
+        <Box sx={{ p: 2, bgcolor: 'background.paper', borderRadius: 1 }}>
+            <Typography variant="h6" gutterBottom>
+                Filter Summary
+            </Typography>
+            <Grid container spacing={2}>
+                <Grid item xs={6}>
+                    <Card variant="outlined">
+                        <CardContent>
+                            <Typography color="textSecondary" gutterBottom>
+                                Customers
+                            </Typography>
+                            <Typography variant="h5">
+                                {stats.customerCount}
+                            </Typography>
+                        </CardContent>
+                    </Card>
+                </Grid>
+                <Grid item xs={6}>
+                    <Card variant="outlined">
+                        <CardContent>
+                            <Typography color="textSecondary" gutterBottom>
+                                Total Services
+                            </Typography>
+                            <Typography variant="h5">
+                                {stats.totalServices}
+                            </Typography>
+                        </CardContent>
+                    </Card>
+                </Grid>
+                <Grid item xs={6}>
+                    <Card variant="outlined">
+                        <CardContent>
+                            <Typography color="textSecondary" gutterBottom>
+                                Total Earnings
+                            </Typography>
+                            <Typography variant="h5" color="success.main">
+                                ₹{stats.totalEarnings}
+                            </Typography>
+                        </CardContent>
+                    </Card>
+                </Grid>
+                <Grid item xs={6}>
+                    <Card variant="outlined">
+                        <CardContent>
+                            <Typography color="textSecondary" gutterBottom>
+                                Total Pending
+                            </Typography>
+                            <Typography variant="h5" color="error.main">
+                                ₹{stats.totalPending}
+                            </Typography>
+                        </CardContent>
+                    </Card>
+                </Grid>
+                <Grid item xs={6}>
+                    <Card variant="outlined">
+                        <CardContent>
+                            <Typography color="textSecondary" gutterBottom>
+                                Services Due
+                            </Typography>
+                            <Typography variant="h5" color="warning.main">
+                                {stats.servicesDue}
+                            </Typography>
+                        </CardContent>
+                    </Card>
+                </Grid>
+                <Grid item xs={6}>
+                    <Card variant="outlined">
+                        <CardContent>
+                            <Typography color="textSecondary" gutterBottom>
+                                Avg. Service Value
+                            </Typography>
+                            <Typography variant="h5">
+                                ₹{stats.averageServiceValue}
+                            </Typography>
+                        </CardContent>
+                    </Card>
+                </Grid>
+            </Grid>
+        </Box>
+    );
+};
+
 // Row component for expandable details
-const Row = ({ vehicle, onServiceReminder, onCustomerUpdate }) => {
+const Row = ({ vehicle, onServiceReminder, onCustomerUpdate, serialNumber }) => {
     const [open, setOpen] = useState(false);
     const [menuAnchor, setMenuAnchor] = useState(null);
     const [serviceHistorySort, setServiceHistorySort] = useState({
@@ -578,6 +887,11 @@ const Row = ({ vehicle, onServiceReminder, onCustomerUpdate }) => {
         scheduleDate: null
     });
     const [editDialogOpen, setEditDialogOpen] = useState(false);
+    const [editServiceDialogOpen, setEditServiceDialogOpen] = useState(false);
+    const [selectedService, setSelectedService] = useState(null);
+    const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+    const [serviceToDelete, setServiceToDelete] = useState(null);
+    const [deleteCustomerDialogOpen, setDeleteCustomerDialogOpen] = useState(false);
     
     const totalPending = vehicle.serviceHistory?.reduce((acc, service) => {
         return acc + (Number(service.totalAmount) - Number(service.totalRecieve));
@@ -713,6 +1027,79 @@ const Row = ({ vehicle, onServiceReminder, onCustomerUpdate }) => {
         onCustomerUpdate(vehicle.id, updatedData);
     };
 
+    const handleEditService = async (updatedService) => {
+        try {
+            const vehicleRef = doc(firestore, 'vehicles', vehicle.id);
+            const updatedServiceHistory = vehicle.serviceHistory.map((service, idx) => 
+                idx === selectedService.index ? updatedService : service
+            );
+
+            await updateDoc(vehicleRef, {
+                serviceHistory: updatedServiceHistory
+            });
+
+            // Update local state
+            const updatedVehicle = {
+                ...vehicle,
+                serviceHistory: updatedServiceHistory
+            };
+            onCustomerUpdate(vehicle.id, updatedVehicle);
+            setAlertMessage("Service history updated successfully!");
+        } catch (error) {
+            console.error('Error updating service history:', error);
+            setAlertMessage("Error updating service history.");
+        }
+    };
+
+    const handleDeleteService = async () => {
+        try {
+            const vehicleRef = doc(firestore, 'vehicles', vehicle.id);
+            const updatedServiceHistory = vehicle.serviceHistory.filter((_, idx) => 
+                idx !== serviceToDelete.index
+            );
+
+            await updateDoc(vehicleRef, {
+                serviceHistory: updatedServiceHistory
+            });
+
+            // Update local state
+            const updatedVehicle = {
+                ...vehicle,
+                serviceHistory: updatedServiceHistory
+            };
+            onCustomerUpdate(vehicle.id, updatedVehicle);
+            setAlertMessage("Service history entry deleted successfully!");
+            setDeleteDialogOpen(false);
+            setServiceToDelete(null);
+        } catch (error) {
+            console.error('Error deleting service history:', error);
+            setAlertMessage("Error deleting service history entry.");
+        }
+    };
+
+    const handleDeleteCustomer = async () => {
+        try {
+            // Delete the customer document
+            await deleteDoc(doc(firestore, 'vehicles', vehicle.id));
+
+            // Delete any associated follow-ups
+            const followUpsRef = collection(firestore, 'followUps');
+            const followUpQuery = query(followUpsRef, where('vehicleId', '==', vehicle.id));
+            const followUpSnapshot = await getDocs(followUpQuery);
+            
+            const deletePromises = followUpSnapshot.docs.map(doc => deleteDoc(doc.ref));
+            await Promise.all(deletePromises);
+
+            // Update UI through parent component
+            onCustomerUpdate(vehicle.id, null); // null indicates deletion
+            setAlertMessage("Customer record deleted successfully!");
+            setDeleteCustomerDialogOpen(false);
+        } catch (error) {
+            console.error('Error deleting customer:', error);
+            setAlertMessage("Error deleting customer record.");
+        }
+    };
+
     // Add useEffect to fetch follow-up status
     useEffect(() => {
         const fetchFollowUpStatus = async () => {
@@ -773,6 +1160,7 @@ const Row = ({ vehicle, onServiceReminder, onCustomerUpdate }) => {
                         {open ? <KeyboardArrowUpIcon /> : <KeyboardArrowDownIcon />}
                     </IconButton>
                 </TableCell>
+                <TableCell>{serialNumber}</TableCell>
                 <TableCell component="th" scope="row">
                     <Stack direction="row" spacing={1} alignItems="center">
                         <Typography>{vehicle.name}</Typography>
@@ -878,6 +1266,19 @@ const Row = ({ vehicle, onServiceReminder, onCustomerUpdate }) => {
                             </ListItemIcon>
                             Print Latest Invoice
                         </MenuItem>
+                        <Divider />
+                        <MenuItem 
+                            onClick={() => {
+                                setDeleteCustomerDialogOpen(true);
+                                setMenuAnchor(null);
+                            }}
+                            sx={{ color: 'error.main' }}
+                        >
+                            <ListItemIcon>
+                                <DeleteIcon fontSize="small" color="error" />
+                            </ListItemIcon>
+                            Delete Customer Record
+                        </MenuItem>
                     </Menu>
                 </TableCell>
             </TableRow>
@@ -885,52 +1286,31 @@ const Row = ({ vehicle, onServiceReminder, onCustomerUpdate }) => {
                 <TableCell style={{ paddingBottom: 0, paddingTop: 0 }} colSpan={7}>
                     <Collapse in={open} timeout="auto" unmountOnExit>
                         <Box sx={{ margin: 1 }}>
+                            {alertMessage && (
+                                <Alert 
+                                    severity={alertMessage.includes("successfully") ? "success" : "error"}
+                                    sx={{ mb: 2 }}
+                                    onClose={() => setAlertMessage(null)}
+                                >
+                                    {alertMessage}
+                                </Alert>
+                            )}
                             <Typography variant="h6" gutterBottom component="div">
                                 Service History
                             </Typography>
                             <Table size="small">
                                 <TableHead>
                                     <TableRow>
-                                        <TableCell>
-                                            <TableSortLabel
-                                                active={serviceHistorySort.field === 'serviceDate'}
-                                                direction={serviceHistorySort.field === 'serviceDate' ? serviceHistorySort.direction : 'asc'}
-                                                onClick={() => handleServiceHistorySort('serviceDate')}
-                                            >
-                                                Service Date
-                                            </TableSortLabel>
-                                        </TableCell>
+                                        <TableCell>Sr. No.</TableCell>
+                                        <TableCell>Service Date</TableCell>
                                         <TableCell>Service Type</TableCell>
-                                        <TableCell>
-                                            <TableSortLabel
-                                                active={serviceHistorySort.field === 'totalKM'}
-                                                direction={serviceHistorySort.field === 'totalKM' ? serviceHistorySort.direction : 'asc'}
-                                                onClick={() => handleServiceHistorySort('totalKM')}
-                                            >
-                                                Total KM
-                                            </TableSortLabel>
-                                        </TableCell>
-                                        <TableCell>
-                                            <TableSortLabel
-                                                active={serviceHistorySort.field === 'totalAmount'}
-                                                direction={serviceHistorySort.field === 'totalAmount' ? serviceHistorySort.direction : 'asc'}
-                                                onClick={() => handleServiceHistorySort('totalAmount')}
-                                            >
-                                                Amount
-                                            </TableSortLabel>
-                                        </TableCell>
+                                        <TableCell>Total KM</TableCell>
+                                        <TableCell>Amount</TableCell>
                                         <TableCell>Received</TableCell>
-                                        <TableCell>
-                                            <TableSortLabel
-                                                active={serviceHistorySort.field === 'pending'}
-                                                direction={serviceHistorySort.field === 'pending' ? serviceHistorySort.direction : 'asc'}
-                                                onClick={() => handleServiceHistorySort('pending')}
-                                            >
-                                                Pending
-                                            </TableSortLabel>
-                                        </TableCell>
+                                        <TableCell>Pending</TableCell>
                                         <TableCell>Service Notes</TableCell>
                                         <TableCell>Next Service Due</TableCell>
+                                        <TableCell>Actions</TableCell>
                                     </TableRow>
                                 </TableHead>
                                 <TableBody>
@@ -941,6 +1321,7 @@ const Row = ({ vehicle, onServiceReminder, onCustomerUpdate }) => {
                                         
                                         return (
                                             <TableRow key={index}>
+                                                <TableCell>{index + 1}</TableCell>
                                                 <TableCell>{serviceDate.toLocaleDateString()}</TableCell>
                                                 <TableCell>{service.serviceType}</TableCell>
                                                 <TableCell>{service.totalKM}</TableCell>
@@ -962,22 +1343,34 @@ const Row = ({ vehicle, onServiceReminder, onCustomerUpdate }) => {
                                                         />
                                                     </Tooltip>
                                                 </TableCell>
+                                                <TableCell>
+                                                    <Stack direction="row" spacing={1}>
+                                                        <IconButton
+                                                            size="small"
+                                                            onClick={() => {
+                                                                setSelectedService({ ...service, index });
+                                                                setEditServiceDialogOpen(true);
+                                                            }}
+                                                        >
+                                                            <EditIcon fontSize="small" />
+                                                        </IconButton>
+                                                        <IconButton
+                                                            size="small"
+                                                            color="error"
+                                                            onClick={() => {
+                                                                setServiceToDelete({ ...service, index });
+                                                                setDeleteDialogOpen(true);
+                                                            }}
+                                                        >
+                                                            <DeleteIcon fontSize="small" />
+                                                        </IconButton>
+                                                    </Stack>
+                                                </TableCell>
                                             </TableRow>
                                         );
                                     })}
                                 </TableBody>
                             </Table>
-                            <Box sx={{ mt: 2 }}>
-                                <Typography variant="subtitle2" gutterBottom>
-                                    Vehicle Details
-                                </Typography>
-                                <Typography variant="body2">
-                                    Engine Number: {vehicle.engineNumber || 'N/A'}<br />
-                                    Chassis Number: {vehicle.chesiNumber || 'N/A'}<br />
-                                    Vehicle Type: {vehicle.vehicleType}<br />
-                                    Total Services: {vehicle.serviceHistory?.length || 0}
-                                </Typography>
-                            </Box>
                         </Box>
                     </Collapse>
                 </TableCell>
@@ -993,6 +1386,35 @@ const Row = ({ vehicle, onServiceReminder, onCustomerUpdate }) => {
                 onClose={() => setEditDialogOpen(false)}
                 vehicle={vehicle}
                 onSave={handleEditSave}
+            />
+            {selectedService && (
+                <EditServiceDialog
+                    open={editServiceDialogOpen}
+                    onClose={() => {
+                        setEditServiceDialogOpen(false);
+                        setSelectedService(null);
+                    }}
+                    service={selectedService}
+                    onSave={handleEditService}
+                />
+            )}
+            {serviceToDelete && (
+                <DeleteConfirmationDialog
+                    open={deleteDialogOpen}
+                    onClose={() => {
+                        setDeleteDialogOpen(false);
+                        setServiceToDelete(null);
+                    }}
+                    onConfirm={handleDeleteService}
+                    serviceDate={serviceToDelete.serviceDate}
+                />
+            )}
+            <DeleteCustomerDialog
+                open={deleteCustomerDialogOpen}
+                onClose={() => setDeleteCustomerDialogOpen(false)}
+                onConfirm={handleDeleteCustomer}
+                customerName={vehicle.name}
+                vehicleNumber={vehicle.vehicleNumber}
             />
         </>
     );
@@ -1010,7 +1432,8 @@ const ViewAllCustomer = () => {
         serviceStatus: 'all',
         paymentStatus: 'all',
         followUpStatus: 'all',
-        dateRange: 'all'
+        dateRange: 'all',
+        serviceType: 'all'
     });
     const [sortConfig, setSortConfig] = useState({
         field: 'name',
@@ -1055,18 +1478,26 @@ const ViewAllCustomer = () => {
             );
         }
 
-        // Apply other filters
+        // Apply vehicle type filter
         if (filters.vehicleType !== 'all') {
             filtered = filtered.filter(vehicle => vehicle.vehicleType === filters.vehicleType);
         }
 
+        // Apply service type filter
+        if (filters.serviceType !== 'all') {
+            filtered = filtered.filter(vehicle => {
+                const lastService = vehicle.serviceHistory?.[vehicle.serviceHistory.length - 1];
+                return lastService?.serviceType === filters.serviceType;
+            });
+        }
+
+        // Apply service status filter
         if (filters.serviceStatus !== 'all') {
             filtered = filtered.filter(vehicle => {
                 const serviceStatus = calculateServiceDue(vehicle);
                 if (filters.serviceStatus === 'due') {
                     return serviceStatus.isDue;
                 } else if (filters.serviceStatus === 'upcoming') {
-                    // Show vehicles that will be due for service in the next 15 days
                     return !serviceStatus.isDue && serviceStatus.nextDue && 
                         (new Date(serviceStatus.nextDue) - new Date()) / (1000 * 60 * 60 * 24) <= 15;
                 }
@@ -1074,6 +1505,7 @@ const ViewAllCustomer = () => {
             });
         }
 
+        // Apply payment status filter
         if (filters.paymentStatus !== 'all') {
             filtered = filtered.filter(vehicle => {
                 const totalPending = vehicle.serviceHistory?.reduce((acc, service) => 
@@ -1131,11 +1563,18 @@ const ViewAllCustomer = () => {
     };
 
     const handleCustomerUpdate = (vehicleId, updatedData) => {
-        const updatedVehicles = vehicles.map(vehicle => 
-            vehicle.id === vehicleId ? { ...vehicle, ...updatedData } : vehicle
-        );
-        setVehicles(updatedVehicles);
-        setFilteredVehicles(updatedVehicles);
+        if (updatedData === null) {
+            // Handle deletion
+            setVehicles(vehicles.filter(v => v.id !== vehicleId));
+            setFilteredVehicles(filteredVehicles.filter(v => v.id !== vehicleId));
+        } else {
+            // Handle update
+            const updatedVehicles = vehicles.map(vehicle => 
+                vehicle.id === vehicleId ? { ...vehicle, ...updatedData } : vehicle
+            );
+            setVehicles(updatedVehicles);
+            setFilteredVehicles(updatedVehicles);
+        }
     };
 
     if (loading) {
@@ -1191,57 +1630,101 @@ const ViewAllCustomer = () => {
                     anchorEl={filterAnchor}
                     open={Boolean(filterAnchor)}
                     onClose={() => setFilterAnchor(null)}
+                    PaperProps={{
+                        sx: { width: '400px' }
+                    }}
                 >
-                    <Box sx={{ p: 2, minWidth: 200 }}>
-                        <FormControl fullWidth sx={{ mb: 2 }}>
-                            <InputLabel>Vehicle Type</InputLabel>
-                            <Select
-                                value={filters.vehicleType}
-                                onChange={(e) => setFilters({ ...filters, vehicleType: e.target.value })}
-                            >
-                                <MenuItem value="all">All Types</MenuItem>
-                                <MenuItem value="Bike">Bike</MenuItem>
-                                <MenuItem value="Scooty">Scooty</MenuItem>
-                            </Select>
-                        </FormControl>
+                    <Box sx={{ p: 2 }}>
+                        <Stack spacing={2}>
+                            <Typography variant="h6">Filters</Typography>
+                            
+                            <FormControl fullWidth>
+                                <InputLabel>Vehicle Type</InputLabel>
+                                <Select
+                                    value={filters.vehicleType}
+                                    onChange={(e) => setFilters({ ...filters, vehicleType: e.target.value })}
+                                >
+                                    <MenuItem value="all">All Types</MenuItem>
+                                    <MenuItem value="Bike">Bike</MenuItem>
+                                    <MenuItem value="Scooty">Scooty</MenuItem>
+                                </Select>
+                            </FormControl>
 
-                        <FormControl fullWidth sx={{ mb: 2 }}>
-                            <InputLabel>Service Status</InputLabel>
-                            <Select
-                                value={filters.serviceStatus}
-                                onChange={(e) => setFilters({ ...filters, serviceStatus: e.target.value })}
-                            >
-                                <MenuItem value="all">All Status</MenuItem>
-                                <MenuItem value="due">Service Due</MenuItem>
-                                <MenuItem value="upcoming">Upcoming Service</MenuItem>
-                            </Select>
-                        </FormControl>
+                            <FormControl fullWidth>
+                                <InputLabel>Service Type</InputLabel>
+                                <Select
+                                    value={filters.serviceType}
+                                    onChange={(e) => setFilters({ ...filters, serviceType: e.target.value })}
+                                >
+                                    <MenuItem value="all">All Service Types</MenuItem>
+                                    <MenuItem value="Paid Regular Service">Regular Service</MenuItem>
+                                    <MenuItem value="General Repair">General Repair</MenuItem>
+                                </Select>
+                            </FormControl>
 
-                        <FormControl fullWidth sx={{ mb: 2 }}>
-                            <InputLabel>Payment Status</InputLabel>
-                            <Select
-                                value={filters.paymentStatus}
-                                onChange={(e) => setFilters({ ...filters, paymentStatus: e.target.value })}
-                            >
-                                <MenuItem value="all">All Payments</MenuItem>
-                                <MenuItem value="pending">Pending Payments</MenuItem>
-                                <MenuItem value="completed">Completed Payments</MenuItem>
-                            </Select>
-                        </FormControl>
+                            <FormControl fullWidth>
+                                <InputLabel>Service Status</InputLabel>
+                                <Select
+                                    value={filters.serviceStatus}
+                                    onChange={(e) => setFilters({ ...filters, serviceStatus: e.target.value })}
+                                >
+                                    <MenuItem value="all">All Status</MenuItem>
+                                    <MenuItem value="due">Service Due</MenuItem>
+                                    <MenuItem value="upcoming">Upcoming Service</MenuItem>
+                                </Select>
+                            </FormControl>
 
-                        <FormControl fullWidth sx={{ mb: 2 }}>
-                            <InputLabel>Follow-up Status</InputLabel>
-                            <Select
-                                value={filters.followUpStatus}
-                                onChange={(e) => setFilters({ ...filters, followUpStatus: e.target.value })}
+                            <FormControl fullWidth>
+                                <InputLabel>Payment Status</InputLabel>
+                                <Select
+                                    value={filters.paymentStatus}
+                                    onChange={(e) => setFilters({ ...filters, paymentStatus: e.target.value })}
+                                >
+                                    <MenuItem value="all">All Payments</MenuItem>
+                                    <MenuItem value="pending">Pending Payments</MenuItem>
+                                    <MenuItem value="completed">Completed Payments</MenuItem>
+                                </Select>
+                            </FormControl>
+
+                            <FormControl fullWidth>
+                                <InputLabel>Follow-up Status</InputLabel>
+                                <Select
+                                    value={filters.followUpStatus}
+                                    onChange={(e) => setFilters({ ...filters, followUpStatus: e.target.value })}
+                                >
+                                    <MenuItem value="all">All Status</MenuItem>
+                                    <MenuItem value="pending">Pending Follow-up</MenuItem>
+                                    <MenuItem value="called">Called</MenuItem>
+                                    <MenuItem value="scheduled">Service Scheduled</MenuItem>
+                                    <MenuItem value="callback">Callback Required</MenuItem>
+                                </Select>
+                            </FormControl>
+
+                            <Divider />
+                            
+                            <FilterStatistics 
+                                vehicles={vehicles} 
+                                currentFilters={filters}
+                            />
+
+                            <Button 
+                                fullWidth 
+                                variant="outlined" 
+                                onClick={() => {
+                                    setFilters({
+                                        vehicleType: 'all',
+                                        serviceStatus: 'all',
+                                        paymentStatus: 'all',
+                                        followUpStatus: 'all',
+                                        dateRange: 'all',
+                                        serviceType: 'all'
+                                    });
+                                    setFilterAnchor(null);
+                                }}
                             >
-                                <MenuItem value="all">All Status</MenuItem>
-                                <MenuItem value="pending">Pending Follow-up</MenuItem>
-                                <MenuItem value="called">Called</MenuItem>
-                                <MenuItem value="scheduled">Service Scheduled</MenuItem>
-                                <MenuItem value="callback">Callback Required</MenuItem>
-                            </Select>
-                        </FormControl>
+                                Clear All Filters
+                            </Button>
+                        </Stack>
                     </Box>
                 </Menu>
 
@@ -1251,6 +1734,7 @@ const ViewAllCustomer = () => {
                         <TableHead>
                             <TableRow>
                                 <TableCell />
+                                <TableCell>Sr. No.</TableCell>
                                 <TableCell>
                                     <TableSortLabel
                                         active={sortConfig.field === 'name'}
@@ -1284,12 +1768,13 @@ const ViewAllCustomer = () => {
                             </TableRow>
                         </TableHead>
                         <TableBody>
-                            {filteredVehicles.map((vehicle) => (
+                            {filteredVehicles.map((vehicle, index) => (
                                 <Row 
                                     key={vehicle.id} 
                                     vehicle={vehicle}
                                     onServiceReminder={handleServiceReminder}
                                     onCustomerUpdate={handleCustomerUpdate}
+                                    serialNumber={index + 1}
                                 />
                             ))}
                         </TableBody>
