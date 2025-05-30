@@ -17,27 +17,408 @@ import {
     Box,
     Typography,
     Chip,
-    CircularProgress
+    CircularProgress,
+    Select,
+    MenuItem,
+    FormControl,
+    InputLabel,
+    Grid,
+    Card,
+    CardContent,
+    Dialog,
+    DialogTitle,
+    DialogContent,
+    DialogActions,
+    Tooltip,
+    Badge,
+    TableSortLabel,
+    Menu,
+    Divider,
+    ToggleButton,
+    ToggleButtonGroup,
+    Stack
 } from '@mui/material';
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp';
 import TwoWheelerIcon from '@mui/icons-material/TwoWheeler';
 import MopedIcon from '@mui/icons-material/Moped';
 import SearchIcon from '@mui/icons-material/Search';
+import FilterListIcon from '@mui/icons-material/FilterList';
+import SortIcon from '@mui/icons-material/Sort';
+import WhatsAppIcon from '@mui/icons-material/WhatsApp';
+import CallIcon from '@mui/icons-material/Call';
+import NotificationsIcon from '@mui/icons-material/Notifications';
+import MoreVertIcon from '@mui/icons-material/MoreVert';
+import CalendarTodayIcon from '@mui/icons-material/CalendarToday';
+import MonetizationOnIcon from '@mui/icons-material/MonetizationOn';
+
+// Add this utility function at the top of the file
+const calculateServiceDue = (vehicle) => {
+    if (!vehicle.serviceHistory?.length) return { isDue: false, reason: 'No service history' };
+
+    const lastService = vehicle.serviceHistory[vehicle.serviceHistory.length - 1];
+    const lastServiceDate = new Date(lastService.serviceDate);
+    const today = new Date();
+    const daysSinceLastService = Math.floor((today - lastServiceDate) / (1000 * 60 * 60 * 24));
+
+    // Service intervals based on vehicle type
+    const serviceIntervals = {
+        Bike: {
+            days: 60,  // 2 months for bikes
+            km: 2000   // 2000 km for bikes
+        },
+        Scooty: {
+            days: 60,  // 2 months for scooters
+            km: 2000   // 2000 km for scooters
+        }
+    };
+
+    const interval = serviceIntervals[vehicle.vehicleType] || { days: 60, km: 2000 }; // Default to 60 days
+
+    // Check if service is due based on time
+    const isDueByTime = daysSinceLastService > interval.days;
+
+    // Check if service is due based on KM (if we have the current KM reading)
+    const lastKM = Number(lastService.totalKM);
+    const kmThreshold = lastKM + interval.km;
+    const isDueByKM = vehicle.currentKM && Number(vehicle.currentKM) > kmThreshold;
+
+    // Determine service due status and reason
+    if (isDueByTime && isDueByKM) {
+        return {
+            isDue: true,
+            reason: `Due by both time (${daysSinceLastService} days) and KM`,
+            daysOverdue: daysSinceLastService - interval.days,
+            kmOverdue: vehicle.currentKM ? Number(vehicle.currentKM) - kmThreshold : null
+        };
+    } else if (isDueByTime) {
+        return {
+            isDue: true,
+            reason: `Due by time (${daysSinceLastService} days)`,
+            daysOverdue: daysSinceLastService - interval.days
+        };
+    } else if (isDueByKM) {
+        return {
+            isDue: true,
+            reason: 'Due by KM',
+            kmOverdue: Number(vehicle.currentKM) - kmThreshold
+        };
+    }
+
+    return {
+        isDue: false,
+        reason: 'Service not due',
+        nextDue: new Date(lastServiceDate.getTime() + interval.days * 24 * 60 * 60 * 1000)
+    };
+};
+
+// Add this utility function for date calculations
+const calculateEarnings = (vehicles, timeRange) => {
+    const now = new Date();
+    const getStartDate = () => {
+        const date = new Date();
+        switch (timeRange) {
+            case 'today':
+                date.setHours(0, 0, 0, 0);
+                return date;
+            case 'week':
+                date.setDate(date.getDate() - 7);
+                return date;
+            case 'month':
+                date.setMonth(date.getMonth() - 1);
+                return date;
+            case '3months':
+                date.setMonth(date.getMonth() - 3);
+                return date;
+            case '6months':
+                date.setMonth(date.getMonth() - 6);
+                return date;
+            case '12months':
+                date.setMonth(date.getMonth() - 12);
+                return date;
+            default:
+                return new Date(0); // Beginning of time
+        }
+    };
+
+    const startDate = getStartDate();
+    
+    return vehicles.reduce((acc, vehicle) => {
+        const servicesInRange = vehicle.serviceHistory?.filter(service => {
+            const serviceDate = new Date(service.serviceDate);
+            return serviceDate >= startDate && serviceDate <= now;
+        }) || [];
+
+        const earnings = servicesInRange.reduce((sum, service) => {
+            return sum + Number(service.totalRecieve || 0);
+        }, 0);
+
+        const pending = servicesInRange.reduce((sum, service) => {
+            return sum + (Number(service.totalAmount || 0) - Number(service.totalRecieve || 0));
+        }, 0);
+
+        const totalBilled = servicesInRange.reduce((sum, service) => {
+            return sum + Number(service.totalAmount || 0);
+        }, 0);
+
+        const serviceCount = servicesInRange.length;
+
+        return {
+            received: acc.received + earnings,
+            pending: acc.pending + pending,
+            total: acc.total + totalBilled,
+            serviceCount: acc.serviceCount + serviceCount
+        };
+    }, { received: 0, pending: 0, total: 0, serviceCount: 0 });
+};
+
+// Statistics Component
+const Statistics = ({ vehicles }) => {
+    const [earningsTimeRange, setEarningsTimeRange] = useState('month');
+    const earnings = calculateEarnings(vehicles, earningsTimeRange);
+
+    // Calculate service due statistics using the calculateServiceDue function
+    const dueServiceStats = vehicles.reduce((acc, vehicle) => {
+        const serviceStatus = calculateServiceDue(vehicle);
+        if (serviceStatus.isDue) {
+            acc.total += 1;
+            if (vehicle.vehicleType === 'Bike') {
+                acc.bikes += 1;
+            } else if (vehicle.vehicleType === 'Scooty') {
+                acc.scooters += 1;
+            }
+            
+            // Add overdue days categorization
+            if (serviceStatus.daysOverdue > 30) {
+                acc.criticalOverdue += 1;
+            } else if (serviceStatus.daysOverdue > 15) {
+                acc.highOverdue += 1;
+            }
+        }
+        return acc;
+    }, { total: 0, bikes: 0, scooters: 0, criticalOverdue: 0, highOverdue: 0 });
+
+    const stats = {
+        totalCustomers: vehicles.length,
+        totalPending: vehicles.reduce((acc, vehicle) => {
+            const pending = vehicle.serviceHistory?.reduce((sum, service) => 
+                sum + (Number(service.totalAmount) - Number(service.totalRecieve)), 0) || 0;
+            return acc + pending;
+        }, 0),
+        totalServices: vehicles.reduce((acc, vehicle) => 
+            acc + (vehicle.serviceHistory?.length || 0), 0),
+        upcomingServices: dueServiceStats.total,
+        servicesDueByType: {
+            Bike: dueServiceStats.bikes,
+            Scooty: dueServiceStats.scooters
+        },
+        overdueCategories: {
+            critical: dueServiceStats.criticalOverdue,
+            high: dueServiceStats.highOverdue
+        }
+    };
+
+    return (
+        <>
+            <Grid container spacing={2} sx={{ mb: 3 }}>
+                <Grid item xs={12}>
+                    <Card>
+                        <CardContent>
+                            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                                <Typography variant="h6" color="textSecondary">
+                                    <MonetizationOnIcon sx={{ verticalAlign: 'middle', mr: 1 }} />
+                                    Earnings Overview
+                                </Typography>
+                                <ToggleButtonGroup
+                                    value={earningsTimeRange}
+                                    exclusive
+                                    onChange={(e, newValue) => newValue && setEarningsTimeRange(newValue)}
+                                    size="small"
+                                >
+                                    <ToggleButton value="today">Today</ToggleButton>
+                                    <ToggleButton value="week">Week</ToggleButton>
+                                    <ToggleButton value="month">Month</ToggleButton>
+                                    <ToggleButton value="3months">3 Months</ToggleButton>
+                                    <ToggleButton value="6months">6 Months</ToggleButton>
+                                    <ToggleButton value="12months">Year</ToggleButton>
+                                </ToggleButtonGroup>
+                            </Box>
+                            <Grid container spacing={2}>
+                                <Grid item xs={12} md={3}>
+                                    <Typography color="textSecondary">Total Billed</Typography>
+                                    <Typography variant="h4">₹{earnings.total}</Typography>
+                                </Grid>
+                                <Grid item xs={12} md={3}>
+                                    <Typography color="textSecondary">Received</Typography>
+                                    <Typography variant="h4" color="success.main">₹{earnings.received}</Typography>
+                                </Grid>
+                                <Grid item xs={12} md={3}>
+                                    <Typography color="textSecondary">Pending</Typography>
+                                    <Typography variant="h4" color="error.main">₹{earnings.pending}</Typography>
+                                </Grid>
+                                <Grid item xs={12} md={3}>
+                                    <Typography color="textSecondary">Services Done</Typography>
+                                    <Typography variant="h4">{earnings.serviceCount}</Typography>
+                                </Grid>
+                            </Grid>
+                        </CardContent>
+                    </Card>
+                </Grid>
+            </Grid>
+
+            <Grid container spacing={2} sx={{ mb: 3 }}>
+                <Grid item xs={12} sm={6} md={3}>
+                    <Card>
+                        <CardContent>
+                            <Typography color="textSecondary" gutterBottom>Total Customers</Typography>
+                            <Typography variant="h4">{stats.totalCustomers}</Typography>
+                        </CardContent>
+                    </Card>
+                </Grid>
+                <Grid item xs={12} sm={6} md={3}>
+                    <Card>
+                        <CardContent>
+                            <Typography color="textSecondary" gutterBottom>Total Pending Amount</Typography>
+                            <Typography variant="h4">₹{stats.totalPending}</Typography>
+                        </CardContent>
+                    </Card>
+                </Grid>
+                <Grid item xs={12} sm={6} md={3}>
+                    <Card>
+                        <CardContent>
+                            <Typography color="textSecondary" gutterBottom>Total Services</Typography>
+                            <Typography variant="h4">{stats.totalServices}</Typography>
+                        </CardContent>
+                    </Card>
+                </Grid>
+                <Grid item xs={12} sm={6} md={3}>
+                    <Card>
+                        <CardContent>
+                            <Typography color="textSecondary" gutterBottom>Due for Service</Typography>
+                            <Typography variant="h4">{stats.upcomingServices}</Typography>
+                            <Typography variant="body2" color="textSecondary">
+                                Bikes: {stats.servicesDueByType.Bike}<br />
+                                Scooters: {stats.servicesDueByType.Scooty}
+                            </Typography>
+                            {(stats.overdueCategories.critical > 0 || stats.overdueCategories.high > 0) && (
+                                <Typography variant="body2" color="error" sx={{ mt: 1 }}>
+                                    {stats.overdueCategories.critical > 0 && 
+                                        `Critical (>30 days): ${stats.overdueCategories.critical}`}<br />
+                                    {stats.overdueCategories.high > 0 && 
+                                        `High (>15 days): ${stats.overdueCategories.high}`}
+                                </Typography>
+                            )}
+                        </CardContent>
+                    </Card>
+                </Grid>
+            </Grid>
+        </>
+    );
+};
 
 // Row component for expandable details
-const Row = ({ vehicle }) => {
+const Row = ({ vehicle, onServiceReminder }) => {
     const [open, setOpen] = useState(false);
+    const [menuAnchor, setMenuAnchor] = useState(null);
+    const [serviceHistorySort, setServiceHistorySort] = useState({
+        field: 'serviceDate',
+        direction: 'desc'
+    });
     
-    // Calculate total pending amount
     const totalPending = vehicle.serviceHistory?.reduce((acc, service) => {
         return acc + (Number(service.totalAmount) - Number(service.totalRecieve));
     }, 0) || 0;
 
-    // Get the last service date
+    const serviceDueStatus = calculateServiceDue(vehicle);
+
+    // Add status indicator component
+    const ServiceDueIndicator = () => {
+        if (!serviceDueStatus.isDue) return null;
+
+        let color = 'warning';
+        let label = 'Due';
+        let icon = <NotificationsIcon fontSize="small" />;
+
+        if (serviceDueStatus.daysOverdue > 30) {
+            color = 'error';
+            label = 'Critical';
+        } else if (serviceDueStatus.daysOverdue > 15) {
+            color = 'warning';
+            label = 'High';
+        }
+
+        return (
+            <Tooltip title={`${label}: ${serviceDueStatus.daysOverdue} days overdue - ${serviceDueStatus.reason}`}>
+                <Stack direction="row" spacing={1} alignItems="center">
+                    <Chip
+                        icon={icon}
+                        label={label}
+                        color={color}
+                        size="small"
+                        sx={{ minWidth: 85 }}
+                    />
+                    {serviceDueStatus.kmOverdue && (
+                        <Typography variant="caption" color="text.secondary">
+                            ({serviceDueStatus.kmOverdue}km over)
+                        </Typography>
+                    )}
+                </Stack>
+            </Tooltip>
+        );
+    };
+
     const lastServiceDate = vehicle.serviceHistory?.length > 0 
-        ? new Date(vehicle.serviceHistory[vehicle.serviceHistory.length - 1].serviceDate).toLocaleDateString()
-        : 'No service record';
+        ? new Date(vehicle.serviceHistory[vehicle.serviceHistory.length - 1].serviceDate)
+        : null;
+
+    const handleWhatsApp = () => {
+        const message = `Dear ${vehicle.name}, your vehicle (${vehicle.vehicleNumber}) is due for service. Please visit our service center soon.`;
+        window.open(`https://wa.me/${vehicle.mobileNo}?text=${encodeURIComponent(message)}`);
+    };
+
+    const handleCall = () => {
+        window.location.href = `tel:${vehicle.mobileNo}`;
+    };
+
+    const handleServiceHistorySort = (field) => {
+        setServiceHistorySort(prev => ({
+            field,
+            direction: prev.field === field && prev.direction === 'asc' ? 'desc' : 'asc'
+        }));
+    };
+
+    // Sort service history based on current sort config
+    const sortedServiceHistory = [...(vehicle.serviceHistory || [])].sort((a, b) => {
+        let aValue, bValue;
+        
+        switch (serviceHistorySort.field) {
+            case 'serviceDate':
+                aValue = new Date(a.serviceDate).getTime();
+                bValue = new Date(b.serviceDate).getTime();
+                break;
+            case 'totalKM':
+                aValue = Number(a.totalKM) || 0;
+                bValue = Number(b.totalKM) || 0;
+                break;
+            case 'totalAmount':
+                aValue = Number(a.totalAmount) || 0;
+                bValue = Number(b.totalAmount) || 0;
+                break;
+            case 'pending':
+                aValue = Number(a.totalAmount || 0) - Number(a.totalRecieve || 0);
+                bValue = Number(b.totalAmount || 0) - Number(b.totalRecieve || 0);
+                break;
+            default:
+                aValue = a[serviceHistorySort.field];
+                bValue = b[serviceHistorySort.field];
+        }
+
+        if (serviceHistorySort.direction === 'asc') {
+            return aValue > bValue ? 1 : -1;
+        } else {
+            return aValue < bValue ? 1 : -1;
+        }
+    });
 
     return (
         <>
@@ -51,22 +432,75 @@ const Row = ({ vehicle }) => {
                         {open ? <KeyboardArrowUpIcon /> : <KeyboardArrowDownIcon />}
                     </IconButton>
                 </TableCell>
-                <TableCell component="th" scope="row">{vehicle.name}</TableCell>
-                <TableCell>{vehicle.mobileNo}</TableCell>
-                <TableCell>
-                    {vehicle.vehicleNumber}
-                    {vehicle.vehicleType === 'Bike' ? <TwoWheelerIcon sx={{ ml: 1 }} /> : <MopedIcon sx={{ ml: 1 }} />}
+                <TableCell component="th" scope="row">
+                    <Stack direction="row" spacing={1} alignItems="center">
+                        <Typography>{vehicle.name}</Typography>
+                        {serviceDueStatus.isDue && <ServiceDueIndicator />}
+                    </Stack>
                 </TableCell>
-                <TableCell>{lastServiceDate}</TableCell>
+                <TableCell>
+                    {vehicle.mobileNo}
+                    <IconButton size="small" onClick={handleWhatsApp}>
+                        <WhatsAppIcon color="success" />
+                    </IconButton>
+                    <IconButton size="small" onClick={handleCall}>
+                        <CallIcon color="primary" />
+                    </IconButton>
+                </TableCell>
+                <TableCell>
+                    <Stack direction="row" spacing={1} alignItems="center">
+                        {vehicle.vehicleNumber}
+                        {vehicle.vehicleType === 'Bike' ? <TwoWheelerIcon sx={{ ml: 1 }} /> : <MopedIcon sx={{ ml: 1 }} />}
+                    </Stack>
+                </TableCell>
+                <TableCell>
+                    <Stack direction="row" spacing={1} alignItems="center">
+                        {lastServiceDate ? lastServiceDate.toLocaleDateString() : 'No service record'}
+                        {serviceDueStatus.isDue && (
+                            <Tooltip title={`Send service reminder - ${serviceDueStatus.reason}`}>
+                                <IconButton size="small" onClick={() => onServiceReminder(vehicle, serviceDueStatus)}>
+                                    <NotificationsIcon color={serviceDueStatus.daysOverdue > 30 ? "error" : "warning"} />
+                                </IconButton>
+                            </Tooltip>
+                        )}
+                    </Stack>
+                </TableCell>
                 <TableCell>
                     <Chip 
                         label={`₹${totalPending}`}
                         color={totalPending > 0 ? "error" : "success"}
                     />
                 </TableCell>
+                <TableCell>
+                    <IconButton
+                        onClick={(e) => setMenuAnchor(e.currentTarget)}
+                        size="small"
+                    >
+                        <MoreVertIcon />
+                    </IconButton>
+                    <Menu
+                        anchorEl={menuAnchor}
+                        open={Boolean(menuAnchor)}
+                        onClose={() => setMenuAnchor(null)}
+                    >
+                        <MenuItem onClick={() => {/* TODO: Export service history */}}>
+                            Export Service History
+                        </MenuItem>
+                        <MenuItem onClick={() => {/* TODO: Print invoice */}}>
+                            Print Latest Invoice
+                        </MenuItem>
+                        <MenuItem onClick={() => {/* TODO: Schedule service */}}>
+                            Schedule Next Service
+                        </MenuItem>
+                        <Divider />
+                        <MenuItem onClick={() => {/* TODO: Edit customer */}}>
+                            Edit Customer Details
+                        </MenuItem>
+                    </Menu>
+                </TableCell>
             </TableRow>
             <TableRow>
-                <TableCell style={{ paddingBottom: 0, paddingTop: 0 }} colSpan={6}>
+                <TableCell style={{ paddingBottom: 0, paddingTop: 0 }} colSpan={7}>
                     <Collapse in={open} timeout="auto" unmountOnExit>
                         <Box sx={{ margin: 1 }}>
                             <Typography variant="h6" gutterBottom component="div">
@@ -75,33 +509,80 @@ const Row = ({ vehicle }) => {
                             <Table size="small">
                                 <TableHead>
                                     <TableRow>
-                                        <TableCell>Service Date</TableCell>
+                                        <TableCell>
+                                            <TableSortLabel
+                                                active={serviceHistorySort.field === 'serviceDate'}
+                                                direction={serviceHistorySort.field === 'serviceDate' ? serviceHistorySort.direction : 'asc'}
+                                                onClick={() => handleServiceHistorySort('serviceDate')}
+                                            >
+                                                Service Date
+                                            </TableSortLabel>
+                                        </TableCell>
                                         <TableCell>Service Type</TableCell>
-                                        <TableCell>Total KM</TableCell>
-                                        <TableCell>Amount</TableCell>
+                                        <TableCell>
+                                            <TableSortLabel
+                                                active={serviceHistorySort.field === 'totalKM'}
+                                                direction={serviceHistorySort.field === 'totalKM' ? serviceHistorySort.direction : 'asc'}
+                                                onClick={() => handleServiceHistorySort('totalKM')}
+                                            >
+                                                Total KM
+                                            </TableSortLabel>
+                                        </TableCell>
+                                        <TableCell>
+                                            <TableSortLabel
+                                                active={serviceHistorySort.field === 'totalAmount'}
+                                                direction={serviceHistorySort.field === 'totalAmount' ? serviceHistorySort.direction : 'asc'}
+                                                onClick={() => handleServiceHistorySort('totalAmount')}
+                                            >
+                                                Amount
+                                            </TableSortLabel>
+                                        </TableCell>
                                         <TableCell>Received</TableCell>
-                                        <TableCell>Pending</TableCell>
+                                        <TableCell>
+                                            <TableSortLabel
+                                                active={serviceHistorySort.field === 'pending'}
+                                                direction={serviceHistorySort.field === 'pending' ? serviceHistorySort.direction : 'asc'}
+                                                onClick={() => handleServiceHistorySort('pending')}
+                                            >
+                                                Pending
+                                            </TableSortLabel>
+                                        </TableCell>
                                         <TableCell>Service Notes</TableCell>
+                                        <TableCell>Next Service Due</TableCell>
                                     </TableRow>
                                 </TableHead>
                                 <TableBody>
-                                    {vehicle.serviceHistory?.map((service, index) => (
-                                        <TableRow key={index}>
-                                            <TableCell>{new Date(service.serviceDate).toLocaleDateString()}</TableCell>
-                                            <TableCell>{service.serviceType}</TableCell>
-                                            <TableCell>{service.totalKM}</TableCell>
-                                            <TableCell>₹{service.totalAmount}</TableCell>
-                                            <TableCell>₹{service.totalRecieve}</TableCell>
-                                            <TableCell>
-                                                <Chip 
-                                                    label={`₹${Number(service.totalAmount) - Number(service.totalRecieve)}`}
-                                                    color={(Number(service.totalAmount) - Number(service.totalRecieve)) > 0 ? "error" : "success"}
-                                                    size="small"
-                                                />
-                                            </TableCell>
-                                            <TableCell>{service.serviceNote || '-'}</TableCell>
-                                        </TableRow>
-                                    ))}
+                                    {sortedServiceHistory.map((service, index) => {
+                                        const serviceDate = new Date(service.serviceDate);
+                                        const nextServiceDue = new Date(serviceDate);
+                                        nextServiceDue.setMonth(nextServiceDue.getMonth() + 3);
+                                        
+                                        return (
+                                            <TableRow key={index}>
+                                                <TableCell>{serviceDate.toLocaleDateString()}</TableCell>
+                                                <TableCell>{service.serviceType}</TableCell>
+                                                <TableCell>{service.totalKM}</TableCell>
+                                                <TableCell>₹{service.totalAmount}</TableCell>
+                                                <TableCell>₹{service.totalRecieve}</TableCell>
+                                                <TableCell>
+                                                    <Chip 
+                                                        label={`₹${Number(service.totalAmount) - Number(service.totalRecieve)}`}
+                                                        color={(Number(service.totalAmount) - Number(service.totalRecieve)) > 0 ? "error" : "success"}
+                                                        size="small"
+                                                    />
+                                                </TableCell>
+                                                <TableCell>{service.serviceNote || '-'}</TableCell>
+                                                <TableCell>
+                                                    <Tooltip title={nextServiceDue.toLocaleDateString()}>
+                                                        <CalendarTodayIcon 
+                                                            color={new Date() > nextServiceDue ? "error" : "success"}
+                                                            fontSize="small"
+                                                        />
+                                                    </Tooltip>
+                                                </TableCell>
+                                            </TableRow>
+                                        );
+                                    })}
                                 </TableBody>
                             </Table>
                             <Box sx={{ mt: 2 }}>
@@ -129,6 +610,21 @@ const ViewAllCustomer = () => {
     const [error, setError] = useState(null);
     const [searchTerm, setSearchTerm] = useState('');
     const [filteredVehicles, setFilteredVehicles] = useState([]);
+    const [filterAnchor, setFilterAnchor] = useState(null);
+    const [filters, setFilters] = useState({
+        vehicleType: 'all',
+        serviceStatus: 'all',
+        paymentStatus: 'all',
+        dateRange: 'all'
+    });
+    const [sortConfig, setSortConfig] = useState({
+        field: 'name',
+        direction: 'asc'
+    });
+    const [reminderDialog, setReminderDialog] = useState({
+        open: false,
+        vehicle: null
+    });
 
     useEffect(() => {
         const fetchVehicles = async () => {
@@ -153,13 +649,91 @@ const ViewAllCustomer = () => {
     }, []);
 
     useEffect(() => {
-        const filtered = vehicles.filter(vehicle => 
-            vehicle.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            vehicle.vehicleNumber?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            vehicle.mobileNo?.includes(searchTerm)
-        );
+        let filtered = [...vehicles];
+
+        // Apply search filter
+        if (searchTerm) {
+            filtered = filtered.filter(vehicle => 
+                vehicle.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                vehicle.vehicleNumber?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                vehicle.mobileNo?.includes(searchTerm)
+            );
+        }
+
+        // Apply other filters
+        if (filters.vehicleType !== 'all') {
+            filtered = filtered.filter(vehicle => vehicle.vehicleType === filters.vehicleType);
+        }
+
+        if (filters.serviceStatus !== 'all') {
+            filtered = filtered.filter(vehicle => {
+                const serviceStatus = calculateServiceDue(vehicle);
+                if (filters.serviceStatus === 'due') {
+                    return serviceStatus.isDue;
+                } else if (filters.serviceStatus === 'upcoming') {
+                    // Show vehicles that will be due for service in the next 15 days
+                    return !serviceStatus.isDue && serviceStatus.nextDue && 
+                        (new Date(serviceStatus.nextDue) - new Date()) / (1000 * 60 * 60 * 24) <= 15;
+                }
+                return true;
+            });
+        }
+
+        if (filters.paymentStatus !== 'all') {
+            filtered = filtered.filter(vehicle => {
+                const totalPending = vehicle.serviceHistory?.reduce((acc, service) => 
+                    acc + (Number(service.totalAmount) - Number(service.totalRecieve)), 0) || 0;
+                return filters.paymentStatus === 'pending' ? totalPending > 0 : totalPending === 0;
+            });
+        }
+
+        // Apply sorting
+        filtered.sort((a, b) => {
+            let aValue, bValue;
+            
+            switch (sortConfig.field) {
+                case 'name':
+                    aValue = a.name || '';
+                    bValue = b.name || '';
+                    break;
+                case 'lastService':
+                    aValue = a.serviceHistory?.slice(-1)[0]?.serviceDate || '0';
+                    bValue = b.serviceHistory?.slice(-1)[0]?.serviceDate || '0';
+                    break;
+                case 'pendingAmount':
+                    aValue = a.serviceHistory?.reduce((acc, service) => 
+                        acc + (Number(service.totalAmount) - Number(service.totalRecieve)), 0) || 0;
+                    bValue = b.serviceHistory?.reduce((acc, service) => 
+                        acc + (Number(service.totalAmount) - Number(service.totalRecieve)), 0) || 0;
+                    break;
+                default:
+                    aValue = a[sortConfig.field] || '';
+                    bValue = b[sortConfig.field] || '';
+            }
+
+            if (sortConfig.direction === 'asc') {
+                return aValue > bValue ? 1 : -1;
+            } else {
+                return aValue < bValue ? 1 : -1;
+            }
+        });
+
         setFilteredVehicles(filtered);
-    }, [searchTerm, vehicles]);
+    }, [searchTerm, filters, vehicles, sortConfig]);
+
+    const handleSort = (field) => {
+        setSortConfig(prev => ({
+            field,
+            direction: prev.field === field && prev.direction === 'asc' ? 'desc' : 'asc'
+        }));
+    };
+
+    const handleServiceReminder = (vehicle) => {
+        setReminderDialog({
+            open: true,
+            vehicle
+        });
+    };
 
     if (loading) {
         return (
@@ -181,41 +755,160 @@ const ViewAllCustomer = () => {
         <div>
             <Navbar />
             <div className="container mx-auto px-4 py-8">
+                {/* Statistics Dashboard */}
+                <Statistics vehicles={vehicles} />
+
+                {/* Search and Filters */}
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
                     <Typography variant="h4" component="h1">
                         Customer Service Records
                     </Typography>
-                    <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                        <SearchIcon sx={{ mr: 1 }} />
-                        <TextField
-                            variant="outlined"
-                            size="small"
-                            placeholder="Search by name, vehicle number, or phone"
-                            value={searchTerm}
-                            onChange={(e) => setSearchTerm(e.target.value)}
-                        />
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                        <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                            <SearchIcon sx={{ mr: 1 }} />
+                            <TextField
+                                variant="outlined"
+                                size="small"
+                                placeholder="Search by name, vehicle number, or phone"
+                                value={searchTerm}
+                                onChange={(e) => setSearchTerm(e.target.value)}
+                            />
+                        </Box>
+                        <Button
+                            startIcon={<FilterListIcon />}
+                            onClick={(e) => setFilterAnchor(e.currentTarget)}
+                        >
+                            Filters
+                        </Button>
                     </Box>
                 </Box>
 
+                {/* Filter Menu */}
+                <Menu
+                    anchorEl={filterAnchor}
+                    open={Boolean(filterAnchor)}
+                    onClose={() => setFilterAnchor(null)}
+                >
+                    <Box sx={{ p: 2, minWidth: 200 }}>
+                        <FormControl fullWidth sx={{ mb: 2 }}>
+                            <InputLabel>Vehicle Type</InputLabel>
+                            <Select
+                                value={filters.vehicleType}
+                                onChange={(e) => setFilters({ ...filters, vehicleType: e.target.value })}
+                            >
+                                <MenuItem value="all">All Types</MenuItem>
+                                <MenuItem value="Bike">Bike</MenuItem>
+                                <MenuItem value="Scooty">Scooty</MenuItem>
+                            </Select>
+                        </FormControl>
+
+                        <FormControl fullWidth sx={{ mb: 2 }}>
+                            <InputLabel>Service Status</InputLabel>
+                            <Select
+                                value={filters.serviceStatus}
+                                onChange={(e) => setFilters({ ...filters, serviceStatus: e.target.value })}
+                            >
+                                <MenuItem value="all">All Status</MenuItem>
+                                <MenuItem value="due">Service Due</MenuItem>
+                                <MenuItem value="upcoming">Upcoming Service</MenuItem>
+                            </Select>
+                        </FormControl>
+
+                        <FormControl fullWidth sx={{ mb: 2 }}>
+                            <InputLabel>Payment Status</InputLabel>
+                            <Select
+                                value={filters.paymentStatus}
+                                onChange={(e) => setFilters({ ...filters, paymentStatus: e.target.value })}
+                            >
+                                <MenuItem value="all">All Payments</MenuItem>
+                                <MenuItem value="pending">Pending Payments</MenuItem>
+                                <MenuItem value="completed">Completed Payments</MenuItem>
+                            </Select>
+                        </FormControl>
+                    </Box>
+                </Menu>
+
+                {/* Main Table */}
                 <TableContainer component={Paper}>
                     <Table aria-label="collapsible table">
                         <TableHead>
                             <TableRow>
                                 <TableCell />
-                                <TableCell>Customer Name</TableCell>
+                                <TableCell>
+                                    <TableSortLabel
+                                        active={sortConfig.field === 'name'}
+                                        direction={sortConfig.field === 'name' ? sortConfig.direction : 'asc'}
+                                        onClick={() => handleSort('name')}
+                                    >
+                                        Customer Name
+                                    </TableSortLabel>
+                                </TableCell>
                                 <TableCell>Mobile</TableCell>
                                 <TableCell>Vehicle Number</TableCell>
-                                <TableCell>Last Service</TableCell>
-                                <TableCell>Total Pending</TableCell>
+                                <TableCell>
+                                    <TableSortLabel
+                                        active={sortConfig.field === 'lastService'}
+                                        direction={sortConfig.field === 'lastService' ? sortConfig.direction : 'asc'}
+                                        onClick={() => handleSort('lastService')}
+                                    >
+                                        Last Service
+                                    </TableSortLabel>
+                                </TableCell>
+                                <TableCell>
+                                    <TableSortLabel
+                                        active={sortConfig.field === 'pendingAmount'}
+                                        direction={sortConfig.field === 'pendingAmount' ? sortConfig.direction : 'asc'}
+                                        onClick={() => handleSort('pendingAmount')}
+                                    >
+                                        Total Pending
+                                    </TableSortLabel>
+                                </TableCell>
+                                <TableCell>Actions</TableCell>
                             </TableRow>
                         </TableHead>
                         <TableBody>
                             {filteredVehicles.map((vehicle) => (
-                                <Row key={vehicle.id} vehicle={vehicle} />
+                                <Row 
+                                    key={vehicle.id} 
+                                    vehicle={vehicle}
+                                    onServiceReminder={handleServiceReminder}
+                                />
                             ))}
                         </TableBody>
                     </Table>
                 </TableContainer>
+
+                {/* Service Reminder Dialog */}
+                <Dialog
+                    open={reminderDialog.open}
+                    onClose={() => setReminderDialog({ open: false, vehicle: null })}
+                >
+                    <DialogTitle>Send Service Reminder</DialogTitle>
+                    <DialogContent>
+                        <Typography>
+                            Send a service reminder to {reminderDialog.vehicle?.name} for vehicle {reminderDialog.vehicle?.vehicleNumber}?
+                        </Typography>
+                        <Box sx={{ mt: 2 }}>
+                            <Button
+                                startIcon={<WhatsAppIcon />}
+                                variant="contained"
+                                color="success"
+                                onClick={() => {
+                                    const message = `Dear ${reminderDialog.vehicle?.name}, your vehicle (${reminderDialog.vehicle?.vehicleNumber}) is due for service. Please visit our service center soon.`;
+                                    window.open(`https://wa.me/${reminderDialog.vehicle?.mobileNo}?text=${encodeURIComponent(message)}`);
+                                    setReminderDialog({ open: false, vehicle: null });
+                                }}
+                            >
+                                Send WhatsApp
+                            </Button>
+                        </Box>
+                    </DialogContent>
+                    <DialogActions>
+                        <Button onClick={() => setReminderDialog({ open: false, vehicle: null })}>
+                            Cancel
+                        </Button>
+                    </DialogActions>
+                </Dialog>
             </div>
         </div>
     );
