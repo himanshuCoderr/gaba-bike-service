@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { firestore, collection } from '../../firebase';
-import { getDocs, query, collection as firestoreCollection, where } from 'firebase/firestore';
+import { getDocs, query, collection as firestoreCollection, where, doc, updateDoc } from 'firebase/firestore';
 import Navbar from '../../Components/Navbar/Navbar';
 import { 
     Table, 
@@ -58,6 +58,7 @@ import GetApp from '@mui/icons-material/GetApp';
 import Print from '@mui/icons-material/Print';
 import History from '@mui/icons-material/History';
 import Timeline from '@mui/icons-material/Timeline';
+import EditIcon from '@mui/icons-material/Edit';
 import { createFollowUpFromService } from '../../firebase/followUpOperations';
 
 // Add this utility function at the top of the file
@@ -331,6 +332,89 @@ const FollowUpDialog = ({ open, onClose, vehicle, onSave }) => {
     );
 };
 
+// Add EditCustomerDialog component before the Row component
+const EditCustomerDialog = ({ open, onClose, vehicle, onSave }) => {
+    const [customerData, setCustomerData] = useState({
+        name: vehicle?.name || '',
+        mobileNo: vehicle?.mobileNo || '',
+        vehicleNumber: vehicle?.vehicleNumber || '',
+        engineNumber: vehicle?.engineNumber || '',
+        chesiNumber: vehicle?.chesiNumber || '',
+        vehicleType: vehicle?.vehicleType || 'Bike'
+    });
+
+    const handleSave = async () => {
+        try {
+            const vehicleRef = doc(firestore, 'vehicles', vehicle.id);
+            await updateDoc(vehicleRef, {
+                ...customerData,
+                updatedAt: new Date().toISOString()
+            });
+            onSave(customerData);
+            onClose();
+        } catch (error) {
+            console.error('Error updating customer:', error);
+        }
+    };
+
+    return (
+        <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
+            <DialogTitle>Edit Customer Details</DialogTitle>
+            <DialogContent>
+                <Stack spacing={2} sx={{ mt: 2 }}>
+                    <TextField
+                        fullWidth
+                        label="Customer Name"
+                        value={customerData.name}
+                        onChange={(e) => setCustomerData({ ...customerData, name: e.target.value })}
+                    />
+                    <TextField
+                        fullWidth
+                        label="Mobile Number"
+                        value={customerData.mobileNo}
+                        onChange={(e) => setCustomerData({ ...customerData, mobileNo: e.target.value })}
+                    />
+                    <TextField
+                        fullWidth
+                        label="Vehicle Number"
+                        value={customerData.vehicleNumber}
+                        onChange={(e) => setCustomerData({ ...customerData, vehicleNumber: e.target.value })}
+                    />
+                    <TextField
+                        fullWidth
+                        label="Engine Number"
+                        value={customerData.engineNumber}
+                        onChange={(e) => setCustomerData({ ...customerData, engineNumber: e.target.value })}
+                    />
+                    <TextField
+                        fullWidth
+                        label="Chassis Number"
+                        value={customerData.chesiNumber}
+                        onChange={(e) => setCustomerData({ ...customerData, chesiNumber: e.target.value })}
+                    />
+                    <FormControl fullWidth>
+                        <InputLabel>Vehicle Type</InputLabel>
+                        <Select
+                            value={customerData.vehicleType}
+                            onChange={(e) => setCustomerData({ ...customerData, vehicleType: e.target.value })}
+                            label="Vehicle Type"
+                        >
+                            <MenuItem value="Bike">Bike</MenuItem>
+                            <MenuItem value="Scooty">Scooty</MenuItem>
+                        </Select>
+                    </FormControl>
+                </Stack>
+            </DialogContent>
+            <DialogActions>
+                <Button onClick={onClose}>Cancel</Button>
+                <Button onClick={handleSave} variant="contained" color="primary">
+                    Save Changes
+                </Button>
+            </DialogActions>
+        </Dialog>
+    );
+};
+
 // Statistics Component
 const Statistics = ({ vehicles }) => {
     const [earningsTimeRange, setEarningsTimeRange] = useState('month');
@@ -476,7 +560,7 @@ const Statistics = ({ vehicles }) => {
 };
 
 // Row component for expandable details
-const Row = ({ vehicle, onServiceReminder }) => {
+const Row = ({ vehicle, onServiceReminder, onCustomerUpdate }) => {
     const [open, setOpen] = useState(false);
     const [menuAnchor, setMenuAnchor] = useState(null);
     const [serviceHistorySort, setServiceHistorySort] = useState({
@@ -493,6 +577,7 @@ const Row = ({ vehicle, onServiceReminder }) => {
         nextFollowUpDate: null,
         scheduleDate: null
     });
+    const [editDialogOpen, setEditDialogOpen] = useState(false);
     
     const totalPending = vehicle.serviceHistory?.reduce((acc, service) => {
         return acc + (Number(service.totalAmount) - Number(service.totalRecieve));
@@ -624,6 +709,10 @@ const Row = ({ vehicle, onServiceReminder }) => {
         }
     };
 
+    const handleEditSave = (updatedData) => {
+        onCustomerUpdate(vehicle.id, updatedData);
+    };
+
     // Add useEffect to fetch follow-up status
     useEffect(() => {
         const fetchFollowUpStatus = async () => {
@@ -745,6 +834,16 @@ const Row = ({ vehicle, onServiceReminder }) => {
                         open={Boolean(menuAnchor)}
                         onClose={() => setMenuAnchor(null)}
                     >
+                        <MenuItem onClick={() => {
+                            setEditDialogOpen(true);
+                            setMenuAnchor(null);
+                        }}>
+                            <ListItemIcon>
+                                <EditIcon fontSize="small" />
+                            </ListItemIcon>
+                            Edit Customer Details
+                        </MenuItem>
+                        <Divider />
                         <MenuItem 
                             onClick={handleFollowUpClick}
                             disabled={followUpStatus !== null}
@@ -889,6 +988,12 @@ const Row = ({ vehicle, onServiceReminder }) => {
                 vehicle={vehicle}
                 onSave={handleFollowUpSubmit}
             />
+            <EditCustomerDialog
+                open={editDialogOpen}
+                onClose={() => setEditDialogOpen(false)}
+                vehicle={vehicle}
+                onSave={handleEditSave}
+            />
         </>
     );
 };
@@ -1023,6 +1128,14 @@ const ViewAllCustomer = () => {
             open: true,
             vehicle
         });
+    };
+
+    const handleCustomerUpdate = (vehicleId, updatedData) => {
+        const updatedVehicles = vehicles.map(vehicle => 
+            vehicle.id === vehicleId ? { ...vehicle, ...updatedData } : vehicle
+        );
+        setVehicles(updatedVehicles);
+        setFilteredVehicles(updatedVehicles);
     };
 
     if (loading) {
@@ -1176,6 +1289,7 @@ const ViewAllCustomer = () => {
                                     key={vehicle.id} 
                                     vehicle={vehicle}
                                     onServiceReminder={handleServiceReminder}
+                                    onCustomerUpdate={handleCustomerUpdate}
                                 />
                             ))}
                         </TableBody>

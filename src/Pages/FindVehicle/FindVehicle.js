@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { firestore } from '../../firebase.js';
 import Navbar from '../../Components/Navbar/Navbar.js';
-import { collection, query, where, getDocs, updateDoc, doc } from 'firebase/firestore';
+import { collection, query, where, getDocs, updateDoc, doc, addDoc, deleteDoc } from 'firebase/firestore';
 // Bike Scccooty Icon
 
 import TwoWheelerIcon from '@mui/icons-material/TwoWheeler';
@@ -48,7 +48,6 @@ const SearchVehicle = () => {
 
 
     // Handle adding a new service
-    // Handle adding a new service
     const handleAddNewService = async () => {
         if (!newServiceData.serviceType || !newServiceData.totalKM) {
             setAlertMessage("Please fill in all service details.");
@@ -61,7 +60,21 @@ const SearchVehicle = () => {
                 return;
             }
 
-            const vehicleRef = doc(firestore, 'vehicles', vehicleId); // Reference to the vehicle document using document ID
+            // Check for active follow-ups
+            const followUpsRef = collection(firestore, 'followUps');
+            const followUpQuery = query(followUpsRef, 
+                where('vehicleId', '==', vehicleId),
+                where('status', 'in', ['pending', 'callback_requested', 'scheduled'])
+            );
+            const followUpSnapshot = await getDocs(followUpQuery);
+
+            // Delete any active follow-ups
+            if (!followUpSnapshot.empty) {
+                const followUpDoc = followUpSnapshot.docs[0];
+                await deleteDoc(doc(firestore, 'followUps', followUpDoc.id));
+            }
+
+            const vehicleRef = doc(firestore, 'vehicles', vehicleId);
             console.log("Vehicle Ref: ", vehicleRef);
 
             // Ensure serviceHistory is initialized as an empty array if undefined
@@ -80,8 +93,8 @@ const SearchVehicle = () => {
             // Update the vehicle document with the new service history
             await updateDoc(vehicleRef, { serviceHistory: updatedServiceHistory });
 
-            setAlertMessage("Service added successfully!");
-            setVehicleData({ ...vehicleData, serviceHistory: updatedServiceHistory }); // Update local state
+            setAlertMessage("Service added successfully and follow-up removed!");
+            setVehicleData({ ...vehicleData, serviceHistory: updatedServiceHistory });
             setNewServiceData({ 
                 serviceType: '', 
                 totalKM: '', 
@@ -89,8 +102,8 @@ const SearchVehicle = () => {
                 totalAmount: '',
                 totalRecieve: '',
                 serviceNote: ''
-            }); // Reset form
-            setShowModal(false); // Close modal after submitting
+            });
+            setShowModal(false);
         } catch (error) {
             console.error('Error adding service:', error);
             setAlertMessage("Error adding service.");
