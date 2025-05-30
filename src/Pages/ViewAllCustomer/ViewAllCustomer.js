@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { firestore, collection } from '../../firebase';
-import { getDocs, query, collection as firestoreCollection } from 'firebase/firestore';
+import { getDocs, query, collection as firestoreCollection, where } from 'firebase/firestore';
 import Navbar from '../../Components/Navbar/Navbar';
 import { 
     Table, 
@@ -37,7 +37,8 @@ import {
     ToggleButton,
     ToggleButtonGroup,
     Stack,
-    ListItemIcon
+    ListItemIcon,
+    Alert
 } from '@mui/material';
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp';
@@ -56,6 +57,7 @@ import PhoneCallback from '@mui/icons-material/PhoneCallback';
 import GetApp from '@mui/icons-material/GetApp';
 import Print from '@mui/icons-material/Print';
 import History from '@mui/icons-material/History';
+import Timeline from '@mui/icons-material/Timeline';
 import { createFollowUpFromService } from '../../firebase/followUpOperations';
 
 // Add this utility function at the top of the file
@@ -481,6 +483,16 @@ const Row = ({ vehicle, onServiceReminder }) => {
         field: 'serviceDate',
         direction: 'desc'
     });
+    const [followUpStatus, setFollowUpStatus] = useState(null);
+    const [alertMessage, setAlertMessage] = useState(null);
+    const [followUpDialogOpen, setFollowUpDialogOpen] = useState(false);
+    const [followUpFormData, setFollowUpFormData] = useState({
+        status: FOLLOW_UP_STATUS.CALLED,
+        customerResponse: '',
+        notes: '',
+        nextFollowUpDate: null,
+        scheduleDate: null
+    });
     
     const totalPending = vehicle.serviceHistory?.reduce((acc, service) => {
         return acc + (Number(service.totalAmount) - Number(service.totalRecieve));
@@ -577,9 +589,21 @@ const Row = ({ vehicle, onServiceReminder }) => {
         }
     });
 
-    const [followUpDialogOpen, setFollowUpDialogOpen] = useState(false);
+    const handleFollowUpClick = () => {
+        if (followUpStatus) {
+            // Show info message that follow-up already exists
+            setAlertMessage({
+                type: 'info',
+                text: 'This customer already has an active follow-up. Please manage it from the Follow-up Dashboard.'
+            });
+        } else {
+            setFollowUpDialogOpen(true);
+        }
+        setMenuAnchor(null);
+    };
 
-    const handleFollowUpSave = async (followUpData) => {
+    const handleFollowUpSubmit = async (e) => {
+        e.preventDefault();
         try {
             const serviceData = {
                 customerId: vehicle.id,
@@ -592,11 +616,59 @@ const Row = ({ vehicle, onServiceReminder }) => {
                 serviceDueData: serviceDueStatus
             };
 
-            await createFollowUpFromService(serviceData, followUpData.status);
+            await createFollowUpFromService(serviceData, followUpFormData.status);
             // Show success message or update UI
         } catch (error) {
             console.error('Error saving follow-up:', error);
             // Show error message
+        }
+    };
+
+    // Add useEffect to fetch follow-up status
+    useEffect(() => {
+        const fetchFollowUpStatus = async () => {
+            try {
+                const followUpsRef = collection(firestore, 'followUps');
+                const q = query(followUpsRef, 
+                    where('vehicleId', '==', vehicle.id),
+                    where('status', 'in', ['pending', 'callback_requested', 'scheduled'])
+                );
+                const querySnapshot = await getDocs(q);
+                if (!querySnapshot.empty) {
+                    const followUp = querySnapshot.docs[0].data();
+                    setFollowUpStatus(followUp.status);
+                }
+            } catch (error) {
+                console.error('Error fetching follow-up status:', error);
+            }
+        };
+
+        fetchFollowUpStatus();
+    }, [vehicle.id]);
+
+    const getFollowUpStatusColor = (status) => {
+        switch (status) {
+            case 'pending':
+                return 'warning';
+            case 'callback_requested':
+                return 'info';
+            case 'scheduled':
+                return 'success';
+            default:
+                return 'default';
+        }
+    };
+
+    const getFollowUpStatusLabel = (status) => {
+        switch (status) {
+            case 'pending':
+                return 'Follow-up Pending';
+            case 'callback_requested':
+                return 'Callback Required';
+            case 'scheduled':
+                return 'Service Scheduled';
+            default:
+                return '';
         }
     };
 
@@ -616,6 +688,16 @@ const Row = ({ vehicle, onServiceReminder }) => {
                     <Stack direction="row" spacing={1} alignItems="center">
                         <Typography>{vehicle.name}</Typography>
                         {serviceDueStatus.isDue && <ServiceDueIndicator />}
+                        {followUpStatus && (
+                            <Tooltip title={getFollowUpStatusLabel(followUpStatus)}>
+                                <Chip
+                                    size="small"
+                                    label={getFollowUpStatusLabel(followUpStatus)}
+                                    color={getFollowUpStatusColor(followUpStatus)}
+                                    sx={{ ml: 1 }}
+                                />
+                            </Tooltip>
+                        )}
                     </Stack>
                 </TableCell>
                 <TableCell>
@@ -663,15 +745,28 @@ const Row = ({ vehicle, onServiceReminder }) => {
                         open={Boolean(menuAnchor)}
                         onClose={() => setMenuAnchor(null)}
                     >
-                        <MenuItem onClick={() => {
-                            setFollowUpDialogOpen(true);
-                            setMenuAnchor(null);
-                        }}>
+                        <MenuItem 
+                            onClick={handleFollowUpClick}
+                            disabled={followUpStatus !== null}
+                        >
                             <ListItemIcon>
                                 <PhoneCallback fontSize="small" />
                             </ListItemIcon>
-                            Record Follow-up Call
+                            {followUpStatus ? 'Follow-up Active' : 'Create Follow-up'}
                         </MenuItem>
+                        {followUpStatus && (
+                            <MenuItem 
+                                onClick={() => {
+                                    window.location.href = '/follow-up';
+                                    setMenuAnchor(null);
+                                }}
+                            >
+                                <ListItemIcon>
+                                    <Timeline fontSize="small" />
+                                </ListItemIcon>
+                                Manage Follow-up
+                            </MenuItem>
+                        )}
                         <MenuItem onClick={() => {/* TODO: Export service history */}}>
                             <ListItemIcon>
                                 <GetApp fontSize="small" />
@@ -683,13 +778,6 @@ const Row = ({ vehicle, onServiceReminder }) => {
                                 <Print fontSize="small" />
                             </ListItemIcon>
                             Print Latest Invoice
-                        </MenuItem>
-                        <Divider />
-                        <MenuItem onClick={() => {/* TODO: View follow-up history */}}>
-                            <ListItemIcon>
-                                <History fontSize="small" />
-                            </ListItemIcon>
-                            View Follow-up History
                         </MenuItem>
                     </Menu>
                 </TableCell>
@@ -799,7 +887,7 @@ const Row = ({ vehicle, onServiceReminder }) => {
                 open={followUpDialogOpen}
                 onClose={() => setFollowUpDialogOpen(false)}
                 vehicle={vehicle}
-                onSave={handleFollowUpSave}
+                onSave={handleFollowUpSubmit}
             />
         </>
     );
@@ -807,8 +895,8 @@ const Row = ({ vehicle, onServiceReminder }) => {
 
 const ViewAllCustomer = () => {
     const [vehicles, setVehicles] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(null);
     const [searchTerm, setSearchTerm] = useState('');
     const [filteredVehicles, setFilteredVehicles] = useState([]);
     const [filterAnchor, setFilterAnchor] = useState(null);
@@ -828,27 +916,27 @@ const ViewAllCustomer = () => {
         vehicle: null
     });
 
-  useEffect(() => {
+    useEffect(() => {
         const fetchVehicles = async () => {
             try {
                 const vehiclesCollection = firestoreCollection(firestore, 'vehicles');
                 const vehiclesSnapshot = await getDocs(vehiclesCollection);
                 const vehiclesList = vehiclesSnapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
-        }));
+                    id: doc.id,
+                    ...doc.data()
+                }));
                 setVehicles(vehiclesList);
                 setFilteredVehicles(vehiclesList);
-      } catch (err) {
+            } catch (err) {
                 console.error('Error fetching vehicles:', err);
                 setError('Failed to load vehicle data');
-      } finally {
-        setLoading(false);
-      }
-    };
+            } finally {
+                setLoading(false);
+            }
+        };
 
         fetchVehicles();
-  }, []);
+    }, []);
 
     useEffect(() => {
         let filtered = [...vehicles];
@@ -937,26 +1025,26 @@ const ViewAllCustomer = () => {
         });
     };
 
-  if (loading) {
-    return (
-      <div className="flex justify-center items-center min-h-screen">
+    if (loading) {
+        return (
+            <div className="flex justify-center items-center min-h-screen">
                 <CircularProgress />
-      </div>
-    );
-  }
+            </div>
+        );
+    }
 
-  if (error) {
-    return (
-      <div className="flex justify-center items-center min-h-screen">
+    if (error) {
+        return (
+            <div className="flex justify-center items-center min-h-screen">
                 <Typography color="error">{error}</Typography>
-      </div>
-    );
-  }
+            </div>
+        );
+    }
 
-  return (
+    return (
         <div>
             <Navbar />
-    <div className="container mx-auto px-4 py-8">
+            <div className="container mx-auto px-4 py-8">
                 {/* Statistics Dashboard */}
                 <Statistics vehicles={vehicles} />
 
@@ -1125,9 +1213,9 @@ const ViewAllCustomer = () => {
                         </Button>
                     </DialogActions>
                 </Dialog>
-      </div>
-    </div>
-  );
+            </div>
+        </div>
+    );
 };
 
 export default ViewAllCustomer; 
