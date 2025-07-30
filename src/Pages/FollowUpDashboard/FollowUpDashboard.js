@@ -10,7 +10,9 @@ import {
     addDoc, 
     Timestamp,
     startOfDay,
-    endOfDay 
+    endOfDay,
+    deleteDoc,
+    doc
 } from 'firebase/firestore';
 import Navbar from '../../Components/Navbar/Navbar';
 import {
@@ -43,7 +45,9 @@ import {
     DialogTitle,
     DialogContent,
     DialogActions,
-    Collapse
+    Collapse,
+    Alert,
+    Snackbar
 } from '@mui/material';
 import {
     Phone as PhoneIcon,
@@ -56,11 +60,13 @@ import {
     Assessment as AssessmentIcon,
     Timeline as TimelineIcon,
     KeyboardArrowDown as KeyboardArrowDownIcon,
-    KeyboardArrowUp as KeyboardArrowUpIcon
+    KeyboardArrowUp as KeyboardArrowUpIcon,
+    Delete as DeleteIcon,
+    Search as SearchIcon
 } from '@mui/icons-material';
 import { formatDistanceToNow } from 'date-fns';
 
-const FollowUpRow = ({ followUp, onRecordFollowUp }) => {
+const FollowUpRow = ({ followUp, onRecordFollowUp, onDeleteFollowUp, index }) => {
     const [open, setOpen] = useState(false);
 
     const getStatusColor = (status) => {
@@ -86,6 +92,9 @@ const FollowUpRow = ({ followUp, onRecordFollowUp }) => {
                     >
                         {open ? <KeyboardArrowUpIcon /> : <KeyboardArrowDownIcon />}
                     </IconButton>
+                </TableCell>
+                <TableCell component="th" scope="row">
+                    {index + 1}
                 </TableCell>
                 <TableCell component="th" scope="row">
                     {followUp.customerName}
@@ -121,16 +130,30 @@ const FollowUpRow = ({ followUp, onRecordFollowUp }) => {
                     {followUp.nextFollowUpDate ? new Date(followUp.nextFollowUpDate).toLocaleDateString() : '-'}
                 </TableCell>
                 <TableCell>
-                    <IconButton
-                        size="small"
-                        onClick={onRecordFollowUp}
-                    >
-                        <RefreshIcon fontSize="small" />
-                    </IconButton>
+                    <Stack direction="row" spacing={1}>
+                        <Tooltip title="Record Follow-up">
+                            <IconButton
+                                size="small"
+                                onClick={onRecordFollowUp}
+                                color="primary"
+                            >
+                                <RefreshIcon fontSize="small" />
+                            </IconButton>
+                        </Tooltip>
+                        <Tooltip title="Delete Follow-up">
+                            <IconButton
+                                size="small"
+                                onClick={() => onDeleteFollowUp(followUp)}
+                                color="error"
+                            >
+                                <DeleteIcon fontSize="small" />
+                            </IconButton>
+                        </Tooltip>
+                    </Stack>
                 </TableCell>
             </TableRow>
             <TableRow>
-                <TableCell style={{ paddingBottom: 0, paddingTop: 0 }} colSpan={6}>
+                <TableCell style={{ paddingBottom: 0, paddingTop: 0 }} colSpan={8}>
                     <Collapse in={open} timeout="auto" unmountOnExit>
                         <Box sx={{ margin: 2 }}>
                             <Typography variant="h6" gutterBottom component="div">
@@ -236,6 +259,8 @@ const FollowUpDashboard = () => {
     const [loading, setLoading] = useState(true);
     const [tabValue, setTabValue] = useState(0);
     const [followUps, setFollowUps] = useState([]);
+    const [filteredFollowUps, setFilteredFollowUps] = useState([]);
+    const [searchQuery, setSearchQuery] = useState('');
     const [stats, setStats] = useState({
         total: 0,
         pending: 0,
@@ -246,11 +271,18 @@ const FollowUpDashboard = () => {
         todayFollowUps: 0,
         conversionRate: 0
     });
-    const [dateFilter, setDateFilter] = useState('today');
+    const [dateFilter, setDateFilter] = useState('all_time');
     const [customStartDate, setCustomStartDate] = useState('');
     const [customEndDate, setCustomEndDate] = useState('');
     const [selectedFollowUp, setSelectedFollowUp] = useState(null);
     const [followUpDialogOpen, setFollowUpDialogOpen] = useState(false);
+    const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+    const [followUpToDelete, setFollowUpToDelete] = useState(null);
+    const [snackbar, setSnackbar] = useState({
+        open: false,
+        message: '',
+        severity: 'success'
+    });
     const [followUpFormData, setFollowUpFormData] = useState({
         status: 'pending',
         notes: '',
@@ -262,6 +294,57 @@ const FollowUpDashboard = () => {
     useEffect(() => {
         fetchFollowUps();
     }, [dateFilter, customStartDate, customEndDate, tabValue]);
+
+    useEffect(() => {
+        filterFollowUps();
+    }, [followUps, searchQuery, dateFilter, customStartDate, customEndDate, tabValue]);
+
+    const filterFollowUps = () => {
+        let filtered = [...followUps];
+
+        // Apply date filtering
+        if (dateFilter !== 'all_time') {
+            const { start, end } = getDateRange();
+            
+            if (dateFilter === 'custom') {
+                // For custom range, only filter if both dates are set
+                if (customStartDate && customEndDate) {
+                    filtered = filtered.filter(followUp => {
+                        const followUpDate = followUp.createdAt;
+                        return followUpDate >= start && followUpDate <= end;
+                    });
+                }
+            } else {
+                // For other date filters (today, week, month)
+                filtered = filtered.filter(followUp => {
+                    const followUpDate = followUp.createdAt;
+                    return followUpDate >= start && followUpDate <= end;
+                });
+            }
+        }
+
+        // Apply status filtering based on selected tab
+        if (tabValue === 1) { // Pending
+            filtered = filtered.filter(followUp => followUp.status === 'pending');
+        } else if (tabValue === 2) { // Scheduled
+            filtered = filtered.filter(followUp => followUp.status === 'scheduled');
+        } else if (tabValue === 3) { // Callbacks
+            filtered = filtered.filter(followUp => followUp.status === 'callback_requested');
+        }
+
+        // Apply search filtering
+        if (searchQuery.trim()) {
+            filtered = filtered.filter(followUp => 
+                followUp.customerName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                followUp.vehicleNumber?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                followUp.phone?.includes(searchQuery) ||
+                followUp.status?.toLowerCase().includes(searchQuery.toLowerCase())
+            );
+        }
+
+        setFilteredFollowUps(filtered);
+        calculateStats(filtered); // Calculate stats based on filtered data
+    };
 
     const getDateRange = () => {
         const now = new Date();
@@ -284,6 +367,10 @@ const FollowUpDashboard = () => {
                     start = new Date(customStartDate);
                     end = new Date(customEndDate);
                     end.setHours(23, 59, 59, 999);
+                } else {
+                    // If custom dates are not set, default to today
+                    start.setHours(0, 0, 0, 0);
+                    end.setHours(23, 59, 59, 999);
                 }
                 break;
             default:
@@ -297,27 +384,9 @@ const FollowUpDashboard = () => {
         try {
             setLoading(true);
             const followUpsRef = collection(firestore, 'followUps');
-            const { start, end } = getDateRange();
-
-            let q = query(followUpsRef);
-
-            // Add date range filter if not 'all'
-            if (dateFilter !== 'all') {
-                q = query(followUpsRef,
-                    where('createdAt', '>=', Timestamp.fromDate(start)),
-                    where('createdAt', '<=', Timestamp.fromDate(end))
-                );
-            }
-
-            // Add status filter based on selected tab
-            if (tabValue === 1) { // Pending
-                q = query(q, where('status', '==', 'pending'));
-            } else if (tabValue === 2) { // Scheduled
-                q = query(q, where('status', '==', 'scheduled'));
-            } else if (tabValue === 3) { // Callbacks
-                q = query(q, where('status', '==', 'callback_requested'));
-            }
-
+            
+            // Fetch all follow-ups without any filters
+            const q = query(followUpsRef, orderBy('createdAt', 'desc'));
             const querySnapshot = await getDocs(q);
             const followUpsData = querySnapshot.docs.map(doc => {
                 const data = doc.data();
@@ -334,11 +403,11 @@ const FollowUpDashboard = () => {
                 };
             });
 
-            console.log('Fetched follow-ups:', followUpsData); // Debug log
+            console.log('Fetched all follow-ups:', followUpsData.length); // Debug log
             setFollowUps(followUpsData);
-            calculateStats(followUpsData);
         } catch (error) {
             console.error('Error fetching follow-ups:', error);
+            showSnackbar('Error fetching follow-ups', 'error');
         } finally {
             setLoading(false);
         }
@@ -356,8 +425,11 @@ const FollowUpDashboard = () => {
             notInterested: data.filter(f => f.status === 'not_interested').length,
             callbackRequired: data.filter(f => f.status === 'callback_requested').length,
             todayFollowUps: data.filter(f => {
-                const followUpDate = new Date(f.timestamp);
-                return followUpDate >= today;
+                // Check if follow-up is due today or was created today
+                const followUpDate = f.nextFollowUpDate || f.createdAt;
+                if (!followUpDate) return false;
+                const date = new Date(followUpDate);
+                return date >= today;
             }).length,
             conversionRate: calculateConversionRate(data)
         };
@@ -401,6 +473,34 @@ const FollowUpDashboard = () => {
         setFollowUpDialogOpen(true);
     };
 
+    const handleDeleteFollowUp = (followUp) => {
+        setFollowUpToDelete(followUp);
+        setDeleteDialogOpen(true);
+    };
+
+    const confirmDelete = async () => {
+        try {
+            if (followUpToDelete) {
+                await deleteDoc(doc(firestore, 'followUps', followUpToDelete.id));
+                showSnackbar('Follow-up deleted successfully', 'success');
+                setDeleteDialogOpen(false);
+                setFollowUpToDelete(null);
+                await fetchFollowUps(); // Refresh the data
+            }
+        } catch (error) {
+            console.error('Error deleting follow-up:', error);
+            showSnackbar('Error deleting follow-up', 'error');
+        }
+    };
+
+    const showSnackbar = (message, severity = 'success') => {
+        setSnackbar({
+            open: true,
+            message,
+            severity
+        });
+    };
+
     const handleFollowUpSubmit = async () => {
         try {
             const timestamp = new Date();
@@ -438,9 +538,11 @@ const FollowUpDashboard = () => {
             });
             
             setFollowUpDialogOpen(false);
+            showSnackbar('Follow-up recorded successfully', 'success');
             await fetchFollowUps(); // Refresh the data
         } catch (error) {
             console.error('Error recording follow-up:', error);
+            showSnackbar('Error recording follow-up', 'error');
         }
     };
 
@@ -451,6 +553,13 @@ const FollowUpDashboard = () => {
                 <Typography variant="h4" gutterBottom>
                     Follow-up Dashboard
                 </Typography>
+                
+                {/* Show total vs filtered count */}
+                {followUps.length !== filteredFollowUps.length && (
+                    <Typography variant="body2" color="textSecondary" sx={{ mb: 2 }}>
+                        Showing {filteredFollowUps.length} of {followUps.length} follow-ups
+                    </Typography>
+                )}
 
                 {/* Stats Cards */}
                 <Grid container spacing={2} sx={{ mb: 4 }}>
@@ -516,9 +625,9 @@ const FollowUpDashboard = () => {
                     </Grid>
                 </Grid>
 
-                {/* Filters */}
+                {/* Filters and Search */}
                 <Paper sx={{ p: 2, mb: 3 }}>
-                    <Stack direction="row" spacing={2} alignItems="center">
+                    <Stack direction="row" spacing={2} alignItems="center" sx={{ mb: 2 }}>
                         <FormControl sx={{ minWidth: 200 }}>
                             <InputLabel>Time Period</InputLabel>
                             <Select
@@ -526,6 +635,7 @@ const FollowUpDashboard = () => {
                                 onChange={(e) => setDateFilter(e.target.value)}
                                 label="Time Period"
                             >
+                                <MenuItem value="all_time">All Time</MenuItem>
                                 <MenuItem value="today">Today</MenuItem>
                                 <MenuItem value="week">This Week</MenuItem>
                                 <MenuItem value="month">This Month</MenuItem>
@@ -551,6 +661,12 @@ const FollowUpDashboard = () => {
                                 />
                             </Stack>
                         )}
+                        
+                        {dateFilter === 'custom' && customStartDate && customEndDate && (
+                            <Typography variant="body2" color="success.main" sx={{ mt: 1 }}>
+                                ✓ Custom range: {new Date(customStartDate).toLocaleDateString()} to {new Date(customEndDate).toLocaleDateString()}
+                            </Typography>
+                        )}
 
                         <Button
                             variant="outlined"
@@ -560,6 +676,19 @@ const FollowUpDashboard = () => {
                             Refresh
                         </Button>
                     </Stack>
+
+                    {/* Search Box */}
+                    <TextField
+                        fullWidth
+                        variant="outlined"
+                        placeholder="Search by customer name, vehicle number, phone, or status..."
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        InputProps={{
+                            startAdornment: <SearchIcon sx={{ mr: 1, color: 'text.secondary' }} />,
+                        }}
+                        sx={{ mt: 1 }}
+                    />
                 </Paper>
 
                 {/* Tabs and Table */}
@@ -580,6 +709,7 @@ const FollowUpDashboard = () => {
                             <TableHead>
                                 <TableRow>
                                     <TableCell />
+                                    <TableCell>Sr. No.</TableCell>
                                     <TableCell>Customer</TableCell>
                                     <TableCell>Vehicle</TableCell>
                                     <TableCell>Contact</TableCell>
@@ -591,22 +721,26 @@ const FollowUpDashboard = () => {
                             <TableBody>
                                 {loading ? (
                                     <TableRow>
-                                        <TableCell colSpan={7} align="center">
+                                        <TableCell colSpan={8} align="center">
                                             <CircularProgress />
                                         </TableCell>
                                     </TableRow>
-                                ) : followUps.length === 0 ? (
+                                ) : filteredFollowUps.length === 0 ? (
                                     <TableRow>
-                                        <TableCell colSpan={7} align="center">
-                                            <Typography>No follow-ups found</Typography>
+                                        <TableCell colSpan={8} align="center">
+                                            <Typography>
+                                                {searchQuery ? 'No follow-ups found matching your search' : 'No follow-ups found'}
+                                            </Typography>
                                         </TableCell>
                                     </TableRow>
                                 ) : (
-                                    followUps.map((followUp) => (
+                                    filteredFollowUps.map((followUp, index) => (
                                         <FollowUpRow 
                                             key={followUp.id} 
                                             followUp={followUp}
+                                            index={index}
                                             onRecordFollowUp={() => handleRecordFollowUp(followUp)}
+                                            onDeleteFollowUp={() => handleDeleteFollowUp(followUp)}
                                         />
                                     ))
                                 )}
@@ -717,6 +851,50 @@ const FollowUpDashboard = () => {
                         </Button>
                     </DialogActions>
                 </Dialog>
+
+                {/* Delete Confirmation Dialog */}
+                <Dialog
+                    open={deleteDialogOpen}
+                    onClose={() => setDeleteDialogOpen(false)}
+                    maxWidth="sm"
+                    fullWidth
+                >
+                    <DialogTitle>Confirm Delete</DialogTitle>
+                    <DialogContent>
+                        <Typography>
+                            Are you sure you want to delete the follow-up for{' '}
+                            <strong>{followUpToDelete?.customerName}</strong> ({followUpToDelete?.vehicleNumber})?
+                        </Typography>
+                        <Typography variant="body2" color="textSecondary" sx={{ mt: 1 }}>
+                            This action cannot be undone.
+                        </Typography>
+                    </DialogContent>
+                    <DialogActions>
+                        <Button onClick={() => setDeleteDialogOpen(false)}>Cancel</Button>
+                        <Button 
+                            onClick={confirmDelete} 
+                            variant="contained" 
+                            color="error"
+                        >
+                            Delete
+                        </Button>
+                    </DialogActions>
+                </Dialog>
+
+                {/* Snackbar for notifications */}
+                <Snackbar
+                    open={snackbar.open}
+                    autoHideDuration={6000}
+                    onClose={() => setSnackbar({ ...snackbar, open: false })}
+                >
+                    <Alert 
+                        onClose={() => setSnackbar({ ...snackbar, open: false })} 
+                        severity={snackbar.severity}
+                        sx={{ width: '100%' }}
+                    >
+                        {snackbar.message}
+                    </Alert>
+                </Snackbar>
             </Box>
         </div>
     );
